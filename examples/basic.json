@@ -17,6 +17,12 @@
                 "!label" : "Right",
                 "!style" : "missing_type",
                 "msg" : "teapot."    
+            },
+            "3:other" : {
+                "!id" : "other",
+                "!label" : "Other",
+                "!style" : "missing_type",
+                "msg" : "teapot."    
             }
         }
     ],
