@@ -1,0 +1,32 @@
+{
+    "roots" : [
+        {
+            "!id" : "root",
+            "!label" : "Root",
+            "msg" : "I'm",
+            "@payload_obj" : {
+                "foo" : "bar"
+            },
+            "1:left" : {
+                "!id" : "left",
+                "!label" : "Left",
+                "msg" : "a"
+            },
+            "2:right" : {
+                "!id" : "right",
+                "!label" : "Right",
+                "!style" : "missing_type",
+                "msg" : "teapot."    
+            }
+        }
+    ],
+    "links" : [
+        ["left", "right"]
+    ],
+    "styles" : {
+        "missing_type" : {
+            "bgcolor" : "#ff4444",
+            "fill" : false
+        }
+    }
+}
