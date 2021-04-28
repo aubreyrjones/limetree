@@ -68,7 +68,6 @@ class LiveNode {
         this.rankorder = rl.length
         rl.push(this);
        
-
         let _keys = Object.keys(o);
         _keys.sort();
 
@@ -101,8 +100,11 @@ class LiveNode {
             }
         }
 
-        if (!this['label']) {
-            //this['label'] = this.payload['production'];
+        for (let k of _node_label_keys) {
+            if (o[k]) {
+                this.label = o[k];
+                break;
+            }
         }
     }
 
@@ -233,7 +235,9 @@ var start_limetree = function() {
     draw_all(canvas);
 }
 
-let _node_data = `{
+const _node_label_keys = ["production", "type"];
+
+const _node_data = `{
     "roots" : [
         {
             "production": "global_list",
