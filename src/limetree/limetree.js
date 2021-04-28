@@ -184,12 +184,9 @@ class LiveNode {
 
         // setup for layout
         this.x = 0; //layout position, copied over to pos_x when ready.
-        this.thread = null;
-        this.mod = 0.0;
-        this.ancestor = this;
-        this.change = 0.0;
-        this.shift = 0.0;
         this.sib_index = -1;
+        this.left_countour = 10000000000;
+        this.right_countour = -10000000000;
     }
 
     add_child(edge_name, c) {
@@ -289,18 +286,6 @@ class LiveNode {
         return true;
     }
 
-    left() {
-        if (this.thread) return this.thread;
-        if (this.count()) return this.child(0);
-        return null;
-    }
-
-    right() {
-        if (this.thread) return this.thread;
-        if (this.count()) return this.child(-1);
-        return null;
-    }
-
     left_sib() {
         if ((!this.parent) || (this.sib_index == 0)) return null;
         return this.parent.child(this.sib_index - 1);
@@ -355,13 +340,15 @@ var first_walk = function(v, distance) {
         let c = v.child(i);
         first_walk(c, distance);
         if (i > 0) {
-            let overlap = find_overlap(v.child(i - 1), c); //find_right_contour(v.child(i - 1)) - find_left_countour(c);
-            console.log(overlap);
+            let overlap = find_overlap(v.child(i - 1), c);
+            console.log(c.label, v.child(i - 1).label, overlap);
             if (overlap > 0) {
                 move_tree(c, overlap + distance);
             }
         }
     }
+
+    // stack leaves
 
     let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
     v.x = midpoint - v.halfw();
@@ -388,19 +375,27 @@ var move_tree = function(v, amount) {
 
 var find_left_countour = function(v) {
     let l = v.layout_left_side();
-    if (v.count()) {
-        let cl = find_left_countour(v.child(0));
-        if (cl < l) return cl;
+    let cl = l;
+
+    for (let edge of v.children) {
+        let _cl = find_left_countour(edge.target);
+        if (_cl < cl) cl = _cl;
     }
+
+    if (cl < l) return cl;
     return l;
 }
 
 var find_right_contour = function(v) {
     let r = v.layout_right_side();
-    if (v.count()) {
-        let cr = find_right_contour(v.child(-1));
-        if (cr > r) return cr;
+    let cr = r;
+
+    for (let edge of v.children) {
+        let _cr = find_right_countour(edge.target);
+        if (_cl < cl) cl = _cl;
     }
+
+    if (cr > r) return cr;
     return r;
 }
 
