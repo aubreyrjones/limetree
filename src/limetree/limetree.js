@@ -49,13 +49,23 @@
 const RANK_SEPARATION = 80.0;
 const BOX_W_MARGIN = 4;
 const W_SEPARATION = 20;
-const BOX_BOTTOM_OFFSET = 26;
-const BOX_HEIGHT = BOX_BOTTOM_OFFSET + 10;
+const BOX_TOP_OFFSET = 26;
+const BOX_HEIGHT = BOX_TOP_OFFSET + 10;
 
 var _next_node_id = 999;
 var _all_nodes = {};
 var _root_node = null;
+var _rank_lists = new Array();
 
+var rank_list = function (rank) {
+    let slen = _rank_lists.length;
+    for (let i = 0; i <= (rank - slen); i++) {
+        _rank_lists.push(new Array());
+    }
+    return _rank_lists[rank];
+}
+
+    
 let _styles = {};
 let _node_label_keys = [];
 let _payload_mask_objects = [];
@@ -93,10 +103,10 @@ var is_masked = function(keyname) {
 }
 
 class LiveNode {
-    constructor(o, rank) {
+    constructor(o) {
         // Payload, general tree pointers, and style information.
         this.parent = null;
-        this.rank = rank;
+        this.rank = 0;
         this.payload = {};
         this.children = new Array();
         this.pos_x = 0;
@@ -140,12 +150,12 @@ class LiveNode {
                             let sub_o = o[k][i];
                             if (sub_o instanceof Object) {
                                 let child_key = my_key + "[" + i + "]";
-                                this.add_child(child_key, new LiveNode(sub_o, rank + 1));
+                                this.add_child(child_key, new LiveNode(sub_o));
                             }
                         }
                     }
                     else {
-                        this.add_child(my_key, new LiveNode(o[k], rank + 1));
+                        this.add_child(my_key, new LiveNode(o[k]));
                     }
                 }
                 else {
@@ -189,6 +199,17 @@ class LiveNode {
         this.boxwidth = labelWidth + (BOX_W_MARGIN * 2);
     }
 
+    rank_self(my_rank) {
+        for (let edge of this.children) {
+            edge.target.rank_self(my_rank + 1);
+        }
+
+        this.rank = my_rank;
+        this.pos_y = this.rank * RANK_SEPARATION;
+        let rl = rank_list(my_rank);
+        rl.push(this);
+    }
+
     center() {
         return this.right_side() - (this.boxwidth / 2);
     }
@@ -202,15 +223,23 @@ class LiveNode {
     }
 
     top() {
-        return this.pos_x - BOX_BOTTOM_OFFSET;
+        return this.pos_y - BOX_TOP_OFFSET;
     }
 
     bottom() {
         return this.top() + BOX_HEIGHT;
     }
 
+    y_inside(y) {
+        return y <= this.bottom() && y >= this.top();
+    }
+
+    x_inside(x) {
+        return x >= this.left_side() && x <= this.right_side();
+    }
+
     click_inside(x, y) {
-        return (x >= this.left_side() && x <= this.right_side()) && (y <= this.bottom() && y >= this.top());
+        return this.x_inside(x) && this.y_inside(y);
     }
 
     layout_left_side() {
@@ -289,7 +318,7 @@ class LiveNode {
 
         
         ctx.fillStyle = 'rgb(200, 200, 200)';
-        ctx.fillRect(this.pos_x, this.pos_y - BOX_BOTTOM_OFFSET, this.boxwidth, BOX_HEIGHT);
+        ctx.fillRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
     }
@@ -427,8 +456,11 @@ var layout_tree = function(root) {
 
 // UI
 
-var xform_point = function(x, y) {
-
+var xform_point = function(_x, _y) {
+    return {
+        x: _x / g_scale + g_pan_x ,
+        y: _y / g_scale+ g_pan_y
+    }
 }
 
 var _cur_x;
@@ -440,8 +472,26 @@ var _drag_pan_y;
 var _user_drag_start_x;
 var _user_drag_start_y;
 
+var _select_node = function(x, y) {
+    for (let rl of _rank_lists) {
+        let example = rl[0];
+        if (y < example.top) return null; // our click is above where we start, and we already checked anything lower
+        if (example.y_inside(y)) {
+            for (let n of rl) {
+                if (n.x_inside(x)) return n;
+            }
+        }
+    }
+
+    return null;
+}
+
 var _clicked = function(e) {
-    console.log("clicked");
+    let p = xform_point(e.offsetX, e.offsetY);
+    let n = _select_node(p.x, p.y);
+    if (n) {
+        set_node_data(n);
+    }
 }
 
 var _mouse_down = function(e) {
@@ -460,11 +510,19 @@ var _mouse_moved = function(e) {
     _cur_x = e.offsetX;
     _cur_y = e.offsetY;
 
-    if (!_user_dragging) return;
-    g_pan_x = _drag_pan_x + (_user_drag_start_x - e.offsetX) / g_scale;
-    g_pan_y = _drag_pan_y + (_user_drag_start_y - e.offsetY) / g_scale;
+    if (!_user_dragging) {
+        let p = xform_point(e.offsetX, e.offsetY);
+        let n = _select_node(p.x, p.y);
+        if (n) {
+            set_node_data(n);
+        }
+    }
+    else {
+        g_pan_x = _drag_pan_x + (_user_drag_start_x - e.offsetX) / g_scale;
+        g_pan_y = _drag_pan_y + (_user_drag_start_y - e.offsetY) / g_scale;
 
-    draw_all_configured();
+        draw_all_configured();
+    }
 }
 
 var _wheel_turned = function(e) {
@@ -554,6 +612,7 @@ var start_limetree = function() {
 
     iter_all(n => n.measure_self(ctx));
     layout_tree(_root_node);
+    _root_node.rank_self(0);
     
     draw_all_configured();
 }
