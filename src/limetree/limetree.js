@@ -52,19 +52,15 @@ const W_SEPARATION = 20;
 
 var _next_node_id = 999;
 var _all_nodes = {};
-var _rank_lists = new Array();
+var _root_node = null;
+
+let _styles = {};
+let _node_label_keys = [];
+let _payload_mask_objects = [];
 
 var g_pan_x = -500;
 var g_pan_y = -50;
 var g_scale = 1.0;
-
-var rank_list = function(rank) {
-    let slen = _rank_lists.length;
-    for (let i = 0; i <= (rank - slen); i++) {
-        _rank_lists.push(new Array());
-    }
-    return _rank_lists[rank];
-}
 
 var next_node_id = function() {
     let i = _next_node_id;
@@ -85,12 +81,20 @@ var make_edge = function(n, t) {
     }
 }
 
+var is_masked = function(keyname) {
+    if (keyname[0] == "@") return true;
+    for (let mask of _payload_mask_objects) {
+        if (mask == keyname) return true;
+    }
+
+    return false;
+}
+
 class LiveNode {
     constructor(o, rank) {
         // Payload, general tree pointers, and style information.
         this.parent = null;
         this.rank = rank;
-        this.rankorder = 0;
         this.payload = {};
         this.children = new Array();
         this.pos_x = 0;
@@ -112,9 +116,6 @@ class LiveNode {
         // register us with global trackers
         _all_nodes[this.id] = this;
 
-        let rl = rank_list(this.rank); 
-        this.rankorder = rl.length
-        rl.push(this);
 
         // fetch style information from the global style map
         this.font = '24px sans-serif'; // or fake it for now
@@ -131,7 +132,7 @@ class LiveNode {
             else {
                 let my_key = split_sorted_key(k);
 
-                if (k[0] !== '@' && o[k] instanceof Object) {
+                if (!is_masked(k) && o[k] instanceof Object) {
                     if (o[k] instanceof Array) {
                         for (let i = 0; i < o[k].length; i++) {
                             let sub_o = o[k][i];
@@ -412,28 +413,25 @@ var layout_tree = function(root) {
 
 
 
-var disperse_rank = function(rank) {
-    let rl = _rank_lists[rank];
-    let widthSum = 0;
-    for (let n of rl) {
-        n.pos_x = widthSum;
-        widthSum += n.boxwidth + W_SEPARATION;
-    }
-}
 
 var load_nodes = function() {
     let data = JSON.parse(_node_data);
 
-    let rval = { 
-        styles : data["styles"], 
-        roots : new Array()
+    _styles = data["styles"];
+    _node_label_keys = data["label_keys"];
+    _payload_mask_objects = data["payload_objects"];
+
+    if (data["nodes"].length == 1) { // recursive definition
+        _root_node = new LiveNode(data["nodes"][0], 0);
+    }
+    else {
+        // let n = new Array();
+        // for (let o of data["nodes"]) {
+        //     n.push(new LiveNode(o, 0));
+        // }
+        //not yet implemented
     }
 
-    for (let o of data["roots"]) {
-        rval.roots.push(new LiveNode(o, 0));
-    }
-
-    return rval;
 }
 
 
@@ -468,350 +466,10 @@ var start_limetree = function() {
     let ctx = canvas.getContext('2d');
 
     iter_all(n => n.measure_self(ctx));
-    layout_tree(rank_list(0)[0]);
-
+    layout_tree(_root_node);
+    
     draw_all(canvas);
 }
 
 
-let _styles = {};
-let _node_label_keys = ["production", "type"];
-
-const _node_data = `{
-    "roots" : [
-        {
-            "production": "global_list",
-            "type": null,
-            "value": null,
-            "id": 0,
-            "line": -1,
-            "@attr": {},
-            "c": [
-             {
-              "production": "pipeline",
-              "type": null,
-              "value": null,
-              "id": 1,
-              "line": 1,
-              "@attr": {},
-              "c": [
-               {
-                "production": null,
-                "type": "IDENT",
-                "value": "_1997",
-                "id": 2,
-                "line": 1,
-                "@attr": {},
-                "c": []
-               },
-               {
-                "production": "component_contents",
-                "type": null,
-                "value": null,
-                "id": 3,
-                "line": -1,
-                "@attr": {},
-                "c": [
-                 {
-                  "production": "Gets",
-                  "type": null,
-                  "value": null,
-                  "id": 4,
-                  "line": 2,
-                  "@attr": {},
-                  "c": [
-                   {
-                    "production": "staged_vardecl",
-                    "type": null,
-                    "value": null,
-                    "id": 5,
-                    "line": 2,
-                    "@attr": {},
-                    "c": [
-                     {
-                      "production": null,
-                      "type": "STAGEREF",
-                      "value": "f[",
-                      "id": 6,
-                      "line": 2,
-                      "@attr": {},
-                      "c": []
-                     },
-                     {
-                      "production": "vardecl",
-                      "type": null,
-                      "value": null,
-                      "id": 7,
-                      "line": 2,
-                      "@attr": {},
-                      "c": [
-                       {
-                        "production": null,
-                        "type": "VARDECL",
-                        "value": "f_color:",
-                        "id": 8,
-                        "line": 2,
-                        "@attr": {},
-                        "c": []
-                       },
-                       {
-                        "production": "type",
-                        "type": null,
-                        "value": null,
-                        "id": 9,
-                        "line": -1,
-                        "@attr": {},
-                        "c": []
-                       },
-                       {
-                        "production": "index",
-                        "type": null,
-                        "value": null,
-                        "id": 10,
-                        "line": -1,
-                        "@attr": {},
-                        "c": [
-                         {
-                          "production": null,
-                          "type": "INTEGER",
-                          "value": "0",
-                          "id": 11,
-                          "line": 2,
-                          "@attr": {},
-                          "c": []
-                         }
-                        ]
-                       }
-                      ]
-                     }
-                    ]
-                   },
-                   {
-                    "production": "Gets",
-                    "type": null,
-                    "value": null,
-                    "id": 12,
-                    "line": 3,
-                    "@attr": {},
-                    "c": [
-                     {
-                      "production": "staged_vardecl",
-                      "type": null,
-                      "value": null,
-                      "id": 13,
-                      "line": 3,
-                      "@attr": {},
-                      "c": [
-                       {
-                        "production": null,
-                        "type": "STAGEREF",
-                        "value": "v[",
-                        "id": 14,
-                        "line": 3,
-                        "@attr": {},
-                        "c": []
-                       },
-                       {
-                        "production": "vardecl",
-                        "type": null,
-                        "value": null,
-                        "id": 15,
-                        "line": 3,
-                        "@attr": {},
-                        "c": [
-                         {
-                          "production": null,
-                          "type": "VARDECL",
-                          "value": "v_color:",
-                          "id": 16,
-                          "line": 3,
-                          "@attr": {},
-                          "c": []
-                         },
-                         {
-                          "production": "type",
-                          "type": null,
-                          "value": null,
-                          "id": 17,
-                          "line": -1,
-                          "@attr": {},
-                          "c": []
-                         },
-                         {
-                          "production": "index",
-                          "type": null,
-                          "value": null,
-                          "id": 18,
-                          "line": -1,
-                          "@attr": {},
-                          "c": []
-                         }
-                        ]
-                       }
-                      ]
-                     },
-                     {
-                      "production": "staged_vardecl",
-                      "type": null,
-                      "value": null,
-                      "id": 19,
-                      "line": 4,
-                      "@attr": {},
-                      "c": [
-                       {
-                        "production": null,
-                        "type": "STAGEREF",
-                        "value": "a[",
-                        "id": 20,
-                        "line": 4,
-                        "@attr": {},
-                        "c": []
-                       },
-                       {
-                        "production": "vardecl",
-                        "type": null,
-                        "value": null,
-                        "id": 21,
-                        "line": 4,
-                        "@attr": {},
-                        "c": [
-                         {
-                          "production": null,
-                          "type": "VARDECL",
-                          "value": "a_color:",
-                          "id": 22,
-                          "line": 4,
-                          "@attr": {},
-                          "c": []
-                         },
-                         {
-                          "production": "type",
-                          "type": null,
-                          "value": null,
-                          "id": 23,
-                          "line": -1,
-                          "@attr": {},
-                          "c": [
-                           {
-                            "production": "typeref",
-                            "type": null,
-                            "value": null,
-                            "id": 24,
-                            "line": 4,
-                            "@attr": {},
-                            "c": [
-                             {
-                              "production": null,
-                              "type": "IDENT",
-                              "value": "vec4",
-                              "id": 25,
-                              "line": 4,
-                              "@attr": {},
-                              "c": []
-                             }
-                            ]
-                           }
-                          ]
-                         },
-                         {
-                          "production": "index",
-                          "type": null,
-                          "value": null,
-                          "id": 26,
-                          "line": -1,
-                          "@attr": {},
-                          "c": [
-                           {
-                            "production": null,
-                            "type": "INTEGER",
-                            "value": "1",
-                            "id": 27,
-                            "line": 4,
-                            "@attr": {},
-                            "c": []
-                           }
-                          ]
-                         }
-                        ]
-                       }
-                      ]
-                     }
-                    ]
-                   }
-                  ]
-                 },
-                 {
-                  "production": "Gets",
-                  "type": null,
-                  "value": null,
-                  "id": 28,
-                  "line": 8,
-                  "@attr": {},
-                  "c": [
-                   {
-                    "production": "vardecl",
-                    "type": null,
-                    "value": null,
-                    "id": 29,
-                    "line": 8,
-                    "@attr": {},
-                    "c": [
-                     {
-                      "production": null,
-                      "type": "VARDECL",
-                      "value": "pi:",
-                      "id": 30,
-                      "line": 8,
-                      "@attr": {},
-                      "c": []
-                     },
-                     {
-                      "production": "type",
-                      "type": null,
-                      "value": null,
-                      "id": 31,
-                      "line": -1,
-                      "@attr": {},
-                      "c": []
-                     },
-                     {
-                      "production": "index",
-                      "type": null,
-                      "value": null,
-                      "id": 32,
-                      "line": -1,
-                      "@attr": {},
-                      "c": []
-                     }
-                    ]
-                   },
-                   {
-                    "production": null,
-                    "type": "FLOAT",
-                    "value": "3.14",
-                    "id": 33,
-                    "line": 8,
-                    "@attr": {},
-                    "c": []
-                   }
-                  ]
-                 }
-                ]
-               }
-              ]
-             }
-            ]
-           }
-           
-           
-    ],
-    "links" : [
-        ["left", "right"]
-    ],
-    "styles" : {
-        "missing_type" : {
-            "bgcolor" : "#ff4444",
-            "fill" : false
-        }
-    }
-}`
+const _node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 7, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 8, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 9, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 10, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 11, "line": 2, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 13, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 14, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 15, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 16, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 17, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 18, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 19, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 20, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 21, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 22, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 23, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 24, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 25, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 26, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 27, "line": 4, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 28, "line": 8, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 29, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 30, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 31, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 33, "line": 8, "attr": {}, "c": []}]}]}]}]}], "styles": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`
