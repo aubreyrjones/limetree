@@ -339,7 +339,7 @@ class LiveNode {
 
 var first_walk = function(v, distance) {
     if (v.leaf()) {
-        if (v.leftmost_sib()) {
+        if (v.left_sib()) {
             v.x = v.left_sib().layout_right_side() + distance;
         }
         else {
@@ -350,119 +350,64 @@ var first_walk = function(v, distance) {
     }
 
     // inner node
-    let default_ancestor = v.child(0);
-    for (let edge of v.children) {
-        let c = edge.target;
+    let cCount = v.count();
+    for (let i = 0; i < cCount; i++) {
+        let c = v.child(i);
         first_walk(c, distance);
-        default_ancestor = apportion(c, default_ancestor, distance);
+        if (i > 0) {
+            let overlap = find_overlap(v.child(i - 1), c); //find_right_contour(v.child(i - 1)) - find_left_countour(c);
+            console.log(overlap);
+            if (overlap > 0) {
+                move_tree(c, overlap + distance);
+            }
+        }
     }
-    execute_shifts(v);
 
     let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
-    let ell = v.child(0);
-    let arr = v.child(-1);
-    let w = v.left_sib();
-    if (w) {
-        v.x = w.layout_right_side() + distance;
-        v.mod = v.x - midpoint;
-    }
-    else {
-        v.x = midpoint - v.halfw();
-    }
-
+    v.x = midpoint - v.halfw();
+    
     return v;
 }
 
-var apportion = function(v, default_ancestor, distance) {
-    let w = v.left_sib();
-    if (w) {
-        let vir = v;
-        let vor = v;
-
-        let vil = w;
-        let vol = v.leftmost_sib();
-        let sir = v.mod;
-        let sor = v.mod;
-        let sil = vil.mod;
-        let sol = vol.mod;
-
-        while (vil.right() && vir.left()) {
-            vil = vil.right();
-            vir = vir.left();
-            vol = vol.left();
-            vor = vor.right();
-            vor.ancestor = v;
-            let shift = (vil.layout_right_side() + sil) - (vir.layout_left_side() + sir) + distance;
-            if (shift > 0) {
-                move_subtree(ancestor(vil, v, default_ancestor), v, shift);
-                sir = sir + shift;
-                sor = sor + shift;
-            }
-            sil += vil.mod;
-            sir += vir.mod;
-            sol += vol.mod;
-            sor += vor.mod;
-        }
-
-        if (vil.right() && !vor.right()) {
-            vor.thread = vil.right();
-            vor.mod += sil - sor;
-        }
-        else {
-            if (vir.left() && !vol.left()) {
-                vol.thread = vir.left();
-                vol.mod += sir - sol;
-            }
-            default_ancestor = v;
-        }
+var find_overlap = function(l, r) {
+    let max_overlap = l.layout_right_side() - r.layout_left_side();
+    if (l.count() && r.count()) {
+        let c_overlap = find_overlap(l.child(-1), r.child(0));
+        if (c_overlap > max_overlap) return c_overlap;
     }
-    return default_ancestor;
+
+    return max_overlap;
 }
 
-var move_subtree = function(wl, wr, shift) {
-    let subtrees = wr.sib_index - wl.sib_index;
-    wr.change -= shift / subtrees;
-    wr.shift += shift;
-    wl.change += shift / subtrees;
-    wr.x += shift;
-    wr.mod += shift;
-}
-
-var execute_shifts = function(v) {
-    let shift = 0;
-    let change = 0;
-    for (let i = v.children.length - 1; i != 0 ; --i) {
-        let w = v.child(i);
-        w.x += shift;
-        w.mod += shift;
-        change += change;
-        shift += w.shift + change;
-    }
-}
-
-var ancestor = function(vil, v, default_ancestor) {
-    if (v.parent.has_child(vil.ancestor)) {
-        return vil.ancestor;
-    }
-    else {
-        return default_ancestor;
-    }
-}
-
-var second_walk = function(v, m = 0, min) {
-    v.x += m;
-    if (min === undefined || v.x < min) {
-        min = v.x;
-    }
-
+var move_tree = function(v, amount) {
+    v.x += amount;
     for (let edge of v.children) {
-        min = second_walk(edge.target, m + v.mod, min);
+        move_tree(edge.target, amount);
     }
 }
+
+var find_left_countour = function(v) {
+    let l = v.layout_left_side();
+    if (v.count()) {
+        let cl = find_left_countour(v.child(0));
+        if (cl < l) return cl;
+    }
+    return l;
+}
+
+var find_right_contour = function(v) {
+    let r = v.layout_right_side();
+    if (v.count()) {
+        let cr = find_right_contour(v.child(-1));
+        if (cr > r) return cr;
+    }
+    return r;
+}
+
 
 var layout_tree = function(root) {
     first_walk(root, W_SEPARATION);
-    second_walk(root);
+    //second_walk(root);
 
     iter_all(n => n.pos_x = n.x);
 }
