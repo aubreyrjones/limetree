@@ -1,5 +1,6 @@
 "use strict";
 
+
 const RANK_SEPARATION = 80.0;
 const BOX_W_MARGIN = 4;
 const W_SEPARATION = 20;
@@ -40,34 +41,40 @@ var make_edge = function(n, t) {
 }
 
 class LiveNode {
-    constructor(o, rank, parent) {
-        this.parent = parent;
-        this.thread = null;
+    constructor(o, rank) {
+        // Payload, general tree pointers, and style information.
+        this.parent = null;
         this.rank = rank;
         this.rankorder = 0;
         this.payload = {};
         this.children = new Array();
-        this.pos_x = 0;
-        this.mod = 0;
+        this.pos_x = -1;
         this.pos_y = RANK_SEPARATION * this.rank;
         this.boxwidth = 100;
+        this.sib_index = -1;
+
+        // get the id
         if ("!id" in o) {
-            this.id = o["!id"];
+            this.id = o["!id"]; // explicit id
         } 
         else if ("id" in o) {
-            this.id = o["id"];
+            this.id = o["id"]; // maybe there was a payload named `id` we can use?
         }
         else {
-            this.id = next_node_id();
+            this.id = next_node_id(); // make one up.
         }
-        this.font = '24px sans-serif';
-        
+
+        // register us with global trackers
         _all_nodes[this.id] = this;
 
         let rl = rank_list(this.rank); 
         this.rankorder = rl.length
         rl.push(this);
-       
+
+        // fetch style information from the global style map
+        this.font = '24px sans-serif'; // or fake it for now
+        
+        // load the payload object, recurse on children.
         let _keys = Object.keys(o);
         _keys.sort();
 
@@ -85,12 +92,12 @@ class LiveNode {
                             let sub_o = o[k][i];
                             if (sub_o instanceof Object) {
                                 let child_key = my_key + "[" + i + "]";
-                                this.add_child(child_key, new LiveNode(sub_o, rank + 1, this));
+                                this.add_child(child_key, new LiveNode(sub_o, rank + 1));
                             }
                         }
                     }
                     else {
-                        this.add_child(my_key, new LiveNode(o[k], rank + 1, this));
+                        this.add_child(my_key, new LiveNode(o[k], rank + 1));
                     }
                 }
                 else {
@@ -100,15 +107,30 @@ class LiveNode {
             }
         }
 
-        for (let k of _node_label_keys) {
-            if (o[k]) {
-                this.label = o[k];
-                break;
+        // if we don't have an explicit label already, try some fallbacks.
+        if (!("label" in self)) {
+            for (let k of _node_label_keys) {
+                if (o[k]) {
+                    this.label = o[k];
+                    break;
+                }
             }
         }
+
+        // setup for layout
+        this.x = 0.0; //layout position, copied over to pos_x when ready.
+        this.thread = null;
+        this.mod = 0.0;
+        this.ancestor = this;
+        this.change = 0.0;
+        this.shift = 0.0;
+        this.lefmost_sibling = this;
     }
 
     add_child(edge_name, c) {
+        let childIndex = this.children.length;
+        c.childIndex = childIndex;
+        c.parent = this;
         this.children.push(make_edge(edge_name, c))
     }
 
@@ -131,19 +153,59 @@ class LiveNode {
         return this.pos_x;
     }
 
+    layout_left_side() {
+        return this.x;
+    }
+
+    layout_right_side() {
+        return this.x + this.boxwidth;
+    }
+
+    child(index) {
+        if (index >= this.children.length) {
+            return null;
+        }
+        else if (index < 0) {
+            index = this.children.length + index;
+        }
+
+        return this.children[index].target;
+    }
+
+    count() {
+        return this.children.length;
+    }
+
+    leaf() {
+        if (this.children.length) { return false; }
+        return false;
+    }
+
     next_left() {
         if (this.children.length > 0) {
-            return this.children[0].target;
+            return this.child(0);
         }
         else {
             return this.thread;
         }
     }
 
-    next_right() {
+    left() {
+        if (!this.parent || this.sib_index < 1) { return null; }
+
+        return this.parent.child(this.sib_index - 1);
+    }
+
+    leftmost_sib() {
+        if (!this.parent || this.sib_index == 0) { return null; }
+
+        return this.parent.child(0);
+    }
+
+    right() {
         let l = this.children.length;
         if (l > 0) {
-            return this.children[l - 1].target;
+            return this.child(l - 1);
         }
         else {
             return this.thread;
@@ -170,6 +232,96 @@ class LiveNode {
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
     }
+}
+
+var first_walk = function(v, distance = 1.0) {
+    if (v.leaf()) {
+        if (v.lefmost_sibling()) {
+            v.x = v.left_sib().x + distance;
+        }
+        else {
+            v.x = 0.0;
+        }
+
+        return v;
+    }
+
+    // inner node
+    let default_ancestor = v.child(0);
+    for (let edge of v.children) {
+        let c = edge.target;
+        first_walk(c);
+        default_ancestor = apportion(c, default_ancestor, distance);
+    }
+    execute_shifts(v);
+
+    let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
+    let ell = v.child(0);
+    let arr = v.child(-1);
+    let w = v.left_sib();
+    if (w) {
+        v.x = w.x + distance;
+        v.mod = v.x - midpoint;
+    }
+    else {
+        v.x = midpoint;
+    }
+
+    return v;
+}
+
+var apportion = function(v, default_ancestor, distance) {
+    let w = v.left_sib();
+    if (w) {
+        let vir = v;
+        let vor = v;
+        let vil = w;
+        let vol = v.leftmost_sib();
+        let sir = v.mod;
+        let sor = v.mod;
+        let sil = vil.mod;
+        let sol = vol.mod;
+
+        while (vil.right() && vir.left()) {
+            vil = vil.right();
+            vir = vir.left();
+            vol = vol.left();
+            vor = vor.right();
+            vor.ancestor = v;
+            shift = (vil.x + sil) - (vir.x + sir) + distance;
+            if (shift > 0) {
+                move_subtree(ancestor(vil, v, default_ancestor), v, shift);
+                sir = sir + shift;
+                sor = sor + shift;
+            }
+            sil += vil.mod;
+            sir += vir.mod;
+            sol += vol.mod;
+            sor += vor.mod;
+        }
+
+        if (vil.right() && !vor.right()) {
+            vor.thread = vil.right();
+            vor.mod += sil - sor;
+        }
+        else {
+            if (vir.left() && !vol.left()) {
+                vol.thread = vir.left();
+                vol.mod += sir - sol;
+            }
+            default_ancestor = v;
+        }
+    }
+    return default_ancestor;
+}
+
+var move_subtree = function(wl, wr, shift) {
+    let subtrees = wr.sib_index - wl.sib_index;
+    wr.change -= shift / subtrees;
+    wr.shift += shift;
+    wl.change += shift / subtrees;
+    wr.x += shift;
+    wr.mod += shift;
 }
 
 var disperse_rank = function(rank) {
@@ -235,7 +387,9 @@ var start_limetree = function() {
     draw_all(canvas);
 }
 
-const _node_label_keys = ["production", "type"];
+
+let _styles = {};
+let _node_label_keys = ["production", "type"];
 
 const _node_data = `{
     "roots" : [
