@@ -1,14 +1,16 @@
 "use strict";
 
-const FRAMERATE = 30;
-const FRAMETIME = 1.0 / FRAMERATE;
-const FRAME_MS = FRAMETIME * 1000;
 const RANK_SEPARATION = 80.0;
-
+const BOX_W_MARGIN = 4;
+const W_SEPARATION = 20;
 
 var _next_node_id = 999;
 var _all_nodes = {};
 var _rank_lists = new Array();
+
+var g_pan_x = -500;
+var g_pan_y = -50;
+var g_scale = 1.0;
 
 var rank_list = function(rank) {
     let slen = _rank_lists.length;
@@ -30,18 +32,35 @@ var split_sorted_key = function(k) {
     return splits[1];
 }
 
+var make_edge = function(n, t) {
+    return {
+        name : n,
+        target : t
+    }
+}
+
 class LiveNode {
-    constructor(o, rank) {
+    constructor(o, rank, parent) {
+        this.parent = parent;
+        this.thread = null;
         this.rank = rank;
         this.rankorder = 0;
         this.payload = {};
-        this.children = {}
-        this.pos_x = 400.0;
-        this.pos_y = 50 + RANK_SEPARATION * this.rank;
-        this.vel = 0.0;  // we only have X-axis velocity
-        this.F = 0.0;    // ... and force
+        this.children = new Array();
+        this.pos_x = 0;
+        this.mod = 0;
+        this.pos_y = RANK_SEPARATION * this.rank;
         this.boxwidth = 100;
-        this.id = o['!id'] || o['id'] || next_node_id();
+        if ("!id" in o) {
+            this.id = o["!id"];
+        } 
+        else if ("id" in o) {
+            this.id = o["id"];
+        }
+        else {
+            this.id = next_node_id();
+        }
+        this.font = '24px sans-serif';
         
         _all_nodes[this.id] = this;
 
@@ -59,7 +78,7 @@ class LiveNode {
                 this[k.slice(1)] = o[k];
             }
             else {
-                let my_key = k;
+                let my_key = split_sorted_key(k);
 
                 if (k[0] !== '@' && o[k] instanceof Object) {
                     if (o[k] instanceof Array) {
@@ -67,12 +86,12 @@ class LiveNode {
                             let sub_o = o[k][i];
                             if (sub_o instanceof Object) {
                                 let child_key = my_key + "[" + i + "]";
-                                this.children[child_key] = new LiveNode(sub_o, rank + 1);
+                                this.add_child(child_key, new LiveNode(sub_o, rank + 1, this));
                             }
                         }
                     }
                     else {
-                        this.children[my_key] = new LiveNode(o[k], rank + 1);
+                        this.add_child(my_key, new LiveNode(o[k], rank + 1, this));
                     }
                 }
                 else {
@@ -81,11 +100,21 @@ class LiveNode {
                 }
             }
         }
+
+        if (!this['label']) {
+            //this['label'] = this.payload['production'];
+        }
     }
 
-    next_step() {
-        this.vel *= 0.9; // don't know if we want to damp velocity like that yet.
-        this.F = 0.0;
+    add_child(edge_name, c) {
+        this.children.push(make_edge(edge_name, c))
+    }
+
+    measure_self(ctx) {
+        ctx.font = this.font;
+        let label = this.label || this.id;
+        let labelWidth = ctx.measureText(label).width;
+        this.boxwidth = labelWidth + (BOX_W_MARGIN * 2);
     }
 
     center() {
@@ -96,62 +125,37 @@ class LiveNode {
         return this.pos_x + this.boxwidth;
     }
 
-    /**
-     * Recursively calculate and accumulate the restorative parent/child force.
-    */
-    restorative() {
-        for (let ck in this.children) {
-            let c = this.children[ck];
-            let diff = c.center() - this.center();
-            let F = diff; //maybe gonna get cooler later
-            this.F += F / (1 + this.rank);
-            c.F -= F;// * (1 + this.rank);
-            c.restorative();
+    left_side() {
+        return this.pos_x;
+    }
+
+    next_left() {
+        if (this.children.length > 0) {
+            return this.children[0].target;
+        }
+        else {
+            return this.thread;
         }
     }
 
-    /**
-     * Apply repulsive force between this node and all nodes
-     * on the same rank to the right of this node.
-    */
-    separative() {
-        let rl = rank_list(this.rank);
-        for (let i = this.rankorder + 1; i < rl.length; i++) {
-            let sister = rl[i];
-            let diff = (sister.pos_x - 4) - (this.pos_x + this.boxwidth);
-            let f;
-            if (diff < 0) {
-                f = -diff * 5;
-            }
-            else {
-                if (diff < 0.001) { diff = 0.001; } // just get rid of epsilon
-                f = 800.0 / diff;
-            }
-            self.F -= f;
-            sister.F += f;
+    next_right() {
+        let l = this.children.length;
+        if (l > 0) {
+            return this.children[l - 1].target;
         }
-    }
-
-    integrate(dt) {
-        this.vel += this.F * dt; // everything with unit weight
-        this.pos_x += this.vel * dt;
-
-        for (let ck in this.children) {
-            this.children[ck].integrate(dt);
+        else {
+            return this.thread;
         }
     }
 
     draw(ctx) {
-        ctx.font = '24px sans-serif';
-        
+        ctx.font = this.font
         
         let label = this.label || this.id;
-        let labelWidth = ctx.measureText(label).width;
-        this.boxwidth = labelWidth + 8;
 
         ctx.strokeStyle = 'black';
         for (let ck in this.children) {
-            let c = this.children[ck];
+            let c = this.children[ck].target;
             ctx.beginPath();
             ctx.moveTo(this.center(), this.pos_y);
             ctx.lineTo(c.center(), c.pos_y);
@@ -160,12 +164,20 @@ class LiveNode {
 
         
         ctx.fillStyle = 'rgb(200, 200, 200)';
-        ctx.fillRect(this.pos_x - 4, this.pos_y - 25, this.boxwidth, 24 + 12);
+        ctx.fillRect(this.pos_x, this.pos_y - 25, this.boxwidth, 24 + 12);
         ctx.fillStyle = 'black';
-        ctx.fillText(label, this.pos_x, this.pos_y);
+        ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
     }
 }
 
+var disperse_rank = function(rank) {
+    let rl = _rank_lists[rank];
+    let widthSum = 0;
+    for (let n of rl) {
+        n.pos_x = widthSum;
+        widthSum += n.boxwidth + W_SEPARATION;
+    }
+}
 
 var load_nodes = function() {
     let data = JSON.parse(_node_data);
@@ -182,13 +194,6 @@ var load_nodes = function() {
     return rval;
 }
 
-var separate_ranks = function() {
-    for (let rl of _rank_lists) {
-        for (let n of rl) {
-            n.separative();
-        }
-    }
-}
 
 var iter_all = function(f) {
     for (let nk in _all_nodes) {
@@ -196,26 +201,18 @@ var iter_all = function(f) {
     }
 }
 
-var _timestep = function(dt) {
-    iter_all(n => n.next_step());
-    separate_ranks();
-    for (let root of rank_list(0)) {
-        root.restorative();
-    }
-    iter_all(n => n.integrate(dt));
-}
-
 var draw_all = function(canvas) {
-    
     if (canvas.getContext) {
-        var ctx = canvas.getContext('2d');
+        let ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(-g_pan_x, -g_pan_y);
         iter_all(n => n.draw(ctx));
+        ctx.restore();
     }
 }
 
 var mainloop = function(canvas) {
-    _timestep(FRAMETIME);
     draw_all(canvas);
 }
 
@@ -225,8 +222,15 @@ var start_limetree = function() {
     let canvas = document.getElementById('tree_canvas');
     canvas.width  = window.innerWidth * 0.99;
     canvas.height = window.innerHeight * 0.98;
-    
-    setInterval(_ => mainloop(canvas), FRAME_MS);
+
+    let ctx = canvas.getContext('2d');
+
+    iter_all(n => n.measure_self(ctx));
+    for (let i = 0; i < _rank_lists.length; i++) {
+        disperse_rank(i);
+    }
+
+    draw_all(canvas);
 }
 
 let _node_data = `{
