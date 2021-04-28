@@ -65,8 +65,8 @@ var rank_list = function (rank) {
     return _rank_lists[rank];
 }
 
-var rank_left = function(rank, order) {
-    return rank_list(rank)[order - 1];
+var rank_left = function(v) {
+    return rank_list(v.rank)[v.rankorder - 1];
 }
 
     
@@ -339,13 +339,12 @@ var greatest = function(a, b) {
 }
 
 var first_walk = function(v, distance) {
-    if (v.left_sib()) {
-        v.x = v.left_sib().layout_right_side() + distance;
-    }
-    else if (v.rankorder > 0) {
-        v.x = rank_left(v.rank, v.rankorder).layout_right_side() + distance;
+    if (v.rankorder > 0) {
+        console.log(rank_left(v).id, v.id);
+        v.x = rank_left(v).layout_right_side() + distance;
     }
     else {
+        console.log(v.id);
         v.x = 0.0;
     }
 
@@ -359,46 +358,38 @@ var first_walk = function(v, distance) {
     }
 
     // stack leaves
+    let midpoint = v.child(0).layout_left_side() + v.child(-1).layout_right_side();
+    midpoint /= 2;
+    midpoint -= v.halfw();
 
-    let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
-    let natural = midpoint - v.halfw();
-    
-    if (v.rankorder > 0) {
-        let lefthand = rank_left(v.rank, v.rankorder);
-        let lefthandMargin = lefthand.layout_right_side() + distance;
-        if (lefthandMargin > natural) {
-            v.x = lefthandMargin;
-            let shift = lefthandMargin - natural;
-            for (let edge of v.children) {
-                move_tree(edge.target, shift);
-            }
-        }
-        else {
-            v.x = natural;
-        }
+    let shift = midpoint - v.x;
+
+    for (let i = 0; i < cCount; i++) {
+        //move_tree(v.child(i), shift);
     }
-    else {
-        v.x = natural;
-    }
-    
+
+    v.x += shift;
+
     return v;
 }
 
-var find_max_overlap = function(n) {
-    if (n.rankorder == 0) {
-        return 0.0;
+var constrain_move = function(v, amount) {
+    if (v.rankorder < 1) return amount;
+
+    let myOverlap = (v.x + amount) - rank_left(v).layout_right_side();
+    if (myOverlap < 0) {
+        return amount + myOverlap;
     }
 
-}
-
-var find_overlap = function(l, r) {
-    let max_overlap = l.layout_right_side() - r.layout_left_side();
-    if (l.count() && r.count()) {
-        let c_overlap = find_overlap(l.child(-1), r.child(0));
-        if (c_overlap > max_overlap) return c_overlap;
+    let minMoveAllowed = amount;
+    for (let edge of v.children) {
+        let _allowed = constrain_move(edge.target, amount);
+        if (_allowed > minMoveAllowed) {
+            minMoveAllowed = _allowed;
+        }
     }
 
-    return max_overlap;
+    return minMoveAllowed;
 }
 
 var move_tree = function(v, amount) {
@@ -616,4 +607,22 @@ var start_limetree = function() {
 }
 
 
-const _node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 7, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 8, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 9, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 10, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 11, "line": 2, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 13, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 14, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 15, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 16, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 17, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 18, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 19, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 20, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 21, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 22, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 23, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 24, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 25, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 26, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 27, "line": 4, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 28, "line": 8, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 29, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 30, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 31, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 33, "line": 8, "attr": {}, "c": []}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`
+const _node_data = `{
+    "nodes" : [
+        {
+            "1" : {
+                "1" : {
+                    "1" : {},
+                    "2" : {}
+                }
+            },
+            "2" : {
+                "1" : {"1": {"1": {}}},
+                "2" : {},
+                "3" : {}
+            }
+        }
+    ],
+    "links" : [],
+    "styles" : {}
+}`
