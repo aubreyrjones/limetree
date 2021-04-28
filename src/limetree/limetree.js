@@ -129,7 +129,7 @@ class LiveNode {
 
     add_child(edge_name, c) {
         let childIndex = this.children.length;
-        c.childIndex = childIndex;
+        c.sib_index = childIndex;
         c.parent = this;
         this.children.push(make_edge(edge_name, c))
     }
@@ -145,12 +145,12 @@ class LiveNode {
         return this.right_side() - (this.boxwidth / 2);
     }
 
-    right_side() {
-        return this.pos_x + this.boxwidth;
-    }
-
     left_side() {
         return this.pos_x;
+    }
+
+    right_side() {
+        return this.pos_x + this.boxwidth;
     }
 
     layout_left_side() {
@@ -162,14 +162,22 @@ class LiveNode {
     }
 
     child(index) {
-        if (index >= this.children.length) {
-            return null;
-        }
-        else if (index < 0) {
+        if (index < 0) {
             index = this.children.length + index;
         }
-
+        if (index < 0 || index >= this.children.length) {
+            return null;
+        }
+        
         return this.children[index].target;
+    }
+
+    has_child(n) {
+        for (let edge of this.children) {
+            if (n === edge.target) return true;
+        }
+
+        return false;
     }
 
     count() {
@@ -177,40 +185,33 @@ class LiveNode {
     }
 
     leaf() {
-        if (this.children.length) { return false; }
-        return false;
-    }
-
-    next_left() {
-        if (this.children.length > 0) {
-            return this.child(0);
-        }
-        else {
-            return this.thread;
-        }
+        if (this.count()) { return false; }
+        return true;
     }
 
     left() {
-        if (!this.parent || this.sib_index < 1) { return null; }
-
-        return this.parent.child(this.sib_index - 1);
-    }
-
-    leftmost_sib() {
-        if (!this.parent || this.sib_index == 0) { return null; }
-
-        return this.parent.child(0);
+        if (this.thread) return this.thread;
+        if (this.count()) return this.child(0);
+        return null;
     }
 
     right() {
-        let l = this.children.length;
-        if (l > 0) {
-            return this.child(l - 1);
-        }
-        else {
-            return this.thread;
-        }
+        if (this.thread) return this.thread;
+        if (this.count()) return this.child(-1);
+        return null;
     }
+
+    left_sib() {
+        if ((!this.parent) || (this.sib_index == 0)) return null;
+        return this.parent.child(this.sib_index - 1);
+    }
+
+
+    leftmost_sib() {
+        if ((!this.parent) || (this.sib_index == 0)) return null;
+        return this.parent.child(0);
+    }
+
 
     draw(ctx) {
         ctx.font = this.font
@@ -236,7 +237,7 @@ class LiveNode {
 
 var first_walk = function(v, distance = 1.0) {
     if (v.leaf()) {
-        if (v.lefmost_sibling()) {
+        if (v.leftmost_sib()) {
             v.x = v.left_sib().x + distance;
         }
         else {
@@ -288,7 +289,7 @@ var apportion = function(v, default_ancestor, distance) {
             vol = vol.left();
             vor = vor.right();
             vor.ancestor = v;
-            shift = (vil.x + sil) - (vir.x + sir) + distance;
+            let shift = (vil.x + sil) - (vir.x + sir) + distance;
             if (shift > 0) {
                 move_subtree(ancestor(vil, v, default_ancestor), v, shift);
                 sir = sir + shift;
@@ -322,6 +323,45 @@ var move_subtree = function(wl, wr, shift) {
     wl.change += shift / subtrees;
     wr.x += shift;
     wr.mod += shift;
+}
+
+var execute_shifts = function(v) {
+    let shift = 0;
+    let change = 0;
+    for (let i = 0; i < v.children.length ; ++i) {
+        let w = v.child(i);
+        w.x += shift;
+        w.mod += shift;
+        change += change;
+        shift += w.shift + change;
+    }
+}
+
+var ancestor = function(vil, v, default_ancestor) {
+    if (v.parent.has_child(vil.ancestor)) {
+        return vil.ancestor;
+    }
+    else {
+        return default_ancestor;
+    }
+}
+
+var second_walk = function(v, m = 0, min) {
+    v.x += m;
+    if (min === undefined || v.x < min) {
+        min = v.x;
+    }
+
+    for (let edge of v.children) {
+        min = second_walk(edge.target, m + v.mod, min);
+    }
+}
+
+var layout_tree = function(root) {
+    first_walk(root, 25);
+    second_walk(root);
+
+    iter_all(n => n.pos_x = n.x);
 }
 
 var disperse_rank = function(rank) {
@@ -380,9 +420,10 @@ var start_limetree = function() {
     let ctx = canvas.getContext('2d');
 
     iter_all(n => n.measure_self(ctx));
-    for (let i = 0; i < _rank_lists.length; i++) {
-        disperse_rank(i);
-    }
+    // for (let i = 0; i < _rank_lists.length; i++) {
+    //     disperse_rank(i);
+    // }
+    layout_tree(rank_list(0)[0]);
 
     draw_all(canvas);
 }
