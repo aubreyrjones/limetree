@@ -49,6 +49,8 @@
 const RANK_SEPARATION = 80.0;
 const BOX_W_MARGIN = 4;
 const W_SEPARATION = 20;
+const BOX_BOTTOM_OFFSET = 26;
+const BOX_HEIGHT = BOX_BOTTOM_OFFSET + 10;
 
 var _next_node_id = 999;
 var _all_nodes = {};
@@ -199,6 +201,18 @@ class LiveNode {
         return this.pos_x + this.boxwidth;
     }
 
+    top() {
+        return this.pos_x - BOX_BOTTOM_OFFSET;
+    }
+
+    bottom() {
+        return this.top() + BOX_HEIGHT;
+    }
+
+    click_inside(x, y) {
+        return (x >= this.left_side() && x <= this.right_side()) && (y <= this.bottom() && y >= this.top());
+    }
+
     layout_left_side() {
         return this.x;
     }
@@ -275,7 +289,7 @@ class LiveNode {
 
         
         ctx.fillStyle = 'rgb(200, 200, 200)';
-        ctx.fillRect(this.pos_x, this.pos_y - 25, this.boxwidth, 24 + 12);
+        ctx.fillRect(this.pos_x, this.pos_y - BOX_BOTTOM_OFFSET, this.boxwidth, BOX_HEIGHT);
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
     }
@@ -411,7 +425,73 @@ var layout_tree = function(root) {
     iter_all(n => n.pos_x = n.x);
 }
 
+// UI
 
+var xform_point = function(x, y) {
+
+}
+
+var _cur_x;
+var _cur_y;
+
+var _user_dragging = false;
+var _drag_pan_x;
+var _drag_pan_y;
+var _user_drag_start_x;
+var _user_drag_start_y;
+
+var _clicked = function(e) {
+    console.log("clicked");
+}
+
+var _mouse_down = function(e) {
+    _user_dragging = true;
+    _drag_pan_x = g_pan_x;
+    _drag_pan_y = g_pan_y;
+    _user_drag_start_x = e.offsetX;
+    _user_drag_start_y = e.offsetY;
+}
+
+var _mouse_up = function(e) {
+    _user_dragging = false;
+}
+
+var _mouse_moved = function(e) {
+    _cur_x = e.offsetX;
+    _cur_y = e.offsetY;
+
+    if (!_user_dragging) return;
+    g_pan_x = _drag_pan_x + (_user_drag_start_x - e.offsetX) / g_scale;
+    g_pan_y = _drag_pan_y + (_user_drag_start_y - e.offsetY) / g_scale;
+
+    draw_all_configured();
+}
+
+var _wheel_turned = function(e) {
+    g_scale += -e.deltaY * 0.01;
+    if (g_scale < 0.25) g_scale = 0.25;
+    draw_all_configured();
+}
+
+var _displayed_node = null;
+
+var set_node_data = function(n) {
+    if (n == _displayed_node) return;
+    _displayed_node = n;
+
+    let tbl = document.getElementById("node_table");
+    tbl.textContent = "";
+    
+    for (let pk in n.payload) {
+        let r = tbl.insertRow();
+        let name = r.insertCell();
+        let value = r.insertCell();
+        name.innerHTML = pk;
+        value.innerHTML = n.payload[pk];
+    }
+}
+
+// Startup
 
 
 var load_nodes = function() {
@@ -446,29 +526,36 @@ var draw_all = function(canvas) {
         let ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
+        ctx.scale(g_scale, g_scale);
         ctx.translate(-g_pan_x, -g_pan_y);
         iter_all(n => n.draw(ctx));
         ctx.restore();
     }
 }
 
-var mainloop = function(canvas) {
-    draw_all(canvas);
-}
+var draw_all_configured;
 
 var start_limetree = function() {
     load_nodes();
+    set_node_data(_root_node);
 
     let canvas = document.getElementById('tree_canvas');
+    canvas.addEventListener('mousedown', _mouse_down);
+    canvas.addEventListener('mouseup', _mouse_up);
+    canvas.addEventListener('mousemove', _mouse_moved);
+    canvas.addEventListener('wheel', _wheel_turned);
+    canvas.addEventListener('click', _clicked);
     canvas.width  = window.innerWidth * 0.99;
     canvas.height = window.innerHeight * 0.98;
 
     let ctx = canvas.getContext('2d');
 
+    draw_all_configured = _ => draw_all(canvas);
+
     iter_all(n => n.measure_self(ctx));
     layout_tree(_root_node);
     
-    draw_all(canvas);
+    draw_all_configured();
 }
 
 
