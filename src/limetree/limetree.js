@@ -66,7 +66,13 @@ var rank_list = function (rank) {
 }
 
     
-let _styles = {};
+let _styles = {
+    "default" : {
+        "fillStyle" : "rgb(200, 200, 200)",
+        "outline" : "2px solid black",
+        "font-face" : "sans-serif"
+    }
+};
 let _node_label_keys = [];
 let _payload_mask_objects = [];
 
@@ -112,6 +118,7 @@ class LiveNode {
         this.pos_x = 0;
         this.pos_y = RANK_SEPARATION * this.rank;
         this.boxwidth = 100;
+        this.style = "default";
         
 
         // get the id
@@ -210,8 +217,12 @@ class LiveNode {
         rl.push(this);
     }
 
+    halfw() {
+        return (this.boxwidth / 2);
+    }
+
     center() {
-        return this.right_side() - (this.boxwidth / 2);
+        return this.right_side() - this.halfw();
     }
 
     left_side() {
@@ -247,7 +258,7 @@ class LiveNode {
     }
 
     layout_right_side() {
-        return this.x + this.boxwidth;
+        return this.layout_left_side() + this.boxwidth;
     }
 
     child(index) {
@@ -304,8 +315,9 @@ class LiveNode {
 
     draw(ctx) {
         ctx.font = this.font
-        
         let label = this.label || this.id;
+
+        let style = _styles[this.style];
 
         ctx.strokeStyle = 'black';
         for (let ck in this.children) {
@@ -316,9 +328,10 @@ class LiveNode {
             ctx.stroke();
         }
 
-        
-        ctx.fillStyle = 'rgb(200, 200, 200)';
+        ctx.strokeStyle = style.outline;
+        ctx.fillStyle = style.fillStyle;
         ctx.fillRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
+        ctx.strokeRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
     }
@@ -354,7 +367,7 @@ var first_walk = function(v, distance) {
         v.mod = v.x - midpoint;
     }
     else {
-        v.x = midpoint;
+        v.x = midpoint - v.halfw();
     }
 
     return v;
@@ -448,7 +461,7 @@ var second_walk = function(v, m = 0, min) {
 }
 
 var layout_tree = function(root) {
-    first_walk(root, 10);
+    first_walk(root, 2);
     second_walk(root);
 
     iter_all(n => n.pos_x = n.x);
@@ -475,7 +488,7 @@ var _user_drag_start_y;
 var _select_node = function(x, y) {
     for (let rl of _rank_lists) {
         let example = rl[0];
-        if (y < example.top) return null; // our click is above where we start, and we already checked anything lower
+        if (y < example.top) return null; // our click is above where we start, and we already checked everything lower
         if (example.y_inside(y)) {
             for (let n of rl) {
                 if (n.x_inside(x)) return n;
@@ -526,27 +539,50 @@ var _mouse_moved = function(e) {
 }
 
 var _wheel_turned = function(e) {
+    let oldMouse = xform_point(_cur_x, _cur_y);
     g_scale += -e.deltaY * 0.01;
-    if (g_scale < 0.25) g_scale = 0.25;
+    if (g_scale < 0.05) g_scale = 0.05;
+    if (g_scale > 2.0) g_scale = 2.0;
+
+    let afterMouse = xform_point(_cur_x, _cur_y);
+    g_pan_x += oldMouse.x - afterMouse.x;
+    g_pan_y += oldMouse.y - afterMouse.y ;
+
     draw_all_configured();
 }
 
 var _displayed_node = null;
 
+var layout_obj = function(parent_div, name, o) {
+    let tbl = document.createElement("table");
+    parent_div.appendChild(tbl);
+    
+    let title = tbl.insertRow();
+    let titleCell = title.insertCell();
+    titleCell.innerHTML = name;
+    titleCell.style = 'text-align:center';
+    titleCell.setAttribute("colspan", "2");
+
+    for (let pk in o) {
+        let r = tbl.insertRow();
+        if (o[pk] instanceof Object) {
+            layout_obj(parent_div, pk, o[pk]);
+            continue;
+        }
+        let name = r.insertCell();
+        let value = r.insertCell();
+        name.innerHTML = pk;
+        value.innerHTML = o[pk];
+    }
+}
+
 var set_node_data = function(n) {
     if (n == _displayed_node) return;
     _displayed_node = n;
 
-    let tbl = document.getElementById("node_table");
-    tbl.textContent = "";
-    
-    for (let pk in n.payload) {
-        let r = tbl.insertRow();
-        let name = r.insertCell();
-        let value = r.insertCell();
-        name.innerHTML = pk;
-        value.innerHTML = n.payload[pk];
-    }
+    let info_div = document.getElementById("node_info");
+    info_div.innerText = "";
+    layout_obj(info_div, n.label || n.id, n.payload);
 }
 
 // Startup
@@ -555,7 +591,10 @@ var set_node_data = function(n) {
 var load_nodes = function() {
     let data = JSON.parse(_node_data);
 
-    _styles = data["styles"];
+    for (let sk in data["styles"]) {
+        _styles[sk] = data["styles"][sk];
+    }
+    
     _node_label_keys = data["label_keys"];
     _payload_mask_objects = data["payload_objects"];
 
@@ -603,8 +642,15 @@ var start_limetree = function() {
     canvas.addEventListener('mousemove', _mouse_moved);
     canvas.addEventListener('wheel', _wheel_turned);
     canvas.addEventListener('click', _clicked);
-    canvas.width  = window.innerWidth * 0.99;
-    canvas.height = window.innerHeight * 0.98;
+    
+    window.addEventListener('resize', _ => {
+        canvas.width  = window.innerWidth;
+        canvas.height = window.innerHeight;
+        draw_all_configured();
+    }, false);
+    
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
 
     let ctx = canvas.getContext('2d');
 
