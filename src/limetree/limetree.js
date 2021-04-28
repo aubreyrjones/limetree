@@ -1,5 +1,50 @@
 "use strict";
 
+// MIT License
+
+// Copyright (c) 2021 Aubrey R. Jones
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+
+/**
+ * Layout algorithm translated from: https://github.com/llimllib/pymag-trees/
+ * Relicensed as part of this transformative work under the MIT license above,
+ * in accordance with original LICENSE:
+ * 
+ * 
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ * Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+ *
+ * Everyone is permitted to copy and distribute verbatim or modified
+ * copies of this license document, and changing it is allowed as long
+ * as the name is changed.
+ *
+ *         DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ * TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ * 0. You just DO WHAT THE FUCK YOU WANT TO.
+ * 
+*/
+
 
 const RANK_SEPARATION = 80.0;
 const BOX_W_MARGIN = 4;
@@ -48,10 +93,10 @@ class LiveNode {
         this.rankorder = 0;
         this.payload = {};
         this.children = new Array();
-        this.pos_x = -1;
+        this.pos_x = 0;
         this.pos_y = RANK_SEPARATION * this.rank;
         this.boxwidth = 100;
-        this.sib_index = -1;
+        
 
         // get the id
         if ("!id" in o) {
@@ -118,13 +163,13 @@ class LiveNode {
         }
 
         // setup for layout
-        this.x = 0.0; //layout position, copied over to pos_x when ready.
+        this.x = 0; //layout position, copied over to pos_x when ready.
         this.thread = null;
         this.mod = 0.0;
         this.ancestor = this;
         this.change = 0.0;
         this.shift = 0.0;
-        this.lefmost_sibling = this;
+        this.sib_index = -1;
     }
 
     add_child(edge_name, c) {
@@ -235,10 +280,10 @@ class LiveNode {
     }
 }
 
-var first_walk = function(v, distance = 1.0) {
+var first_walk = function(v, distance) {
     if (v.leaf()) {
         if (v.leftmost_sib()) {
-            v.x = v.left_sib().x + distance;
+            v.x = v.left_sib().layout_right_side() + distance;
         }
         else {
             v.x = 0.0;
@@ -251,7 +296,7 @@ var first_walk = function(v, distance = 1.0) {
     let default_ancestor = v.child(0);
     for (let edge of v.children) {
         let c = edge.target;
-        first_walk(c);
+        first_walk(c, distance);
         default_ancestor = apportion(c, default_ancestor, distance);
     }
     execute_shifts(v);
@@ -261,7 +306,7 @@ var first_walk = function(v, distance = 1.0) {
     let arr = v.child(-1);
     let w = v.left_sib();
     if (w) {
-        v.x = w.x + distance;
+        v.x = w.layout_right_side() + distance;
         v.mod = v.x - midpoint;
     }
     else {
@@ -276,6 +321,7 @@ var apportion = function(v, default_ancestor, distance) {
     if (w) {
         let vir = v;
         let vor = v;
+
         let vil = w;
         let vol = v.leftmost_sib();
         let sir = v.mod;
@@ -289,7 +335,7 @@ var apportion = function(v, default_ancestor, distance) {
             vol = vol.left();
             vor = vor.right();
             vor.ancestor = v;
-            let shift = (vil.x + sil) - (vir.x + sir) + distance;
+            let shift = (vil.layout_right_side() + sil) - (vir.layout_left_side() + sir) + distance;
             if (shift > 0) {
                 move_subtree(ancestor(vil, v, default_ancestor), v, shift);
                 sir = sir + shift;
@@ -328,7 +374,7 @@ var move_subtree = function(wl, wr, shift) {
 var execute_shifts = function(v) {
     let shift = 0;
     let change = 0;
-    for (let i = 0; i < v.children.length ; ++i) {
+    for (let i = v.children.length - 1; i != 0 ; --i) {
         let w = v.child(i);
         w.x += shift;
         w.mod += shift;
@@ -358,11 +404,13 @@ var second_walk = function(v, m = 0, min) {
 }
 
 var layout_tree = function(root) {
-    first_walk(root, 25);
+    first_walk(root, 10);
     second_walk(root);
 
     iter_all(n => n.pos_x = n.x);
 }
+
+
 
 var disperse_rank = function(rank) {
     let rl = _rank_lists[rank];
@@ -420,9 +468,6 @@ var start_limetree = function() {
     let ctx = canvas.getContext('2d');
 
     iter_all(n => n.measure_self(ctx));
-    // for (let i = 0; i < _rank_lists.length; i++) {
-    //     disperse_rank(i);
-    // }
     layout_tree(rank_list(0)[0]);
 
     draw_all(canvas);
