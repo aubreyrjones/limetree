@@ -322,18 +322,6 @@ class LiveNode {
         return true;
     }
 
-    left_sib() {
-        if ((!this.parent) || (this.sib_index == 0)) return null;
-        return this.parent.child(this.sib_index - 1);
-    }
-
-
-    leftmost_sib() {
-        if ((!this.parent) || (this.sib_index == 0)) return null;
-        return this.parent.child(0);
-    }
-
-
     draw(ctx) {
         ctx.font = this.font
         let label = this.label || this.id;
@@ -368,7 +356,7 @@ var greatest = function(a, b) {
     return b;
 }
 
-var first_walk = function(v, distance) {
+var _layout = function(v, distance) {
     if (v.rankorder > 0) {
         v.x = rank_left(v).layout_right_side() + distance;
     }
@@ -385,7 +373,7 @@ var first_walk = function(v, distance) {
     let cCount = v.count();
     for (let i = 0; i < cCount; i++) {
         let c = v.child(i);
-        first_walk(c, distance);
+        _layout(c, distance);
     }
 
     // stack leaves
@@ -501,7 +489,7 @@ var move_tree = function(v, amount) {
 
 
 var layout_tree = function(root) {
-    first_walk(root, W_SEPARATION);
+    _layout(root, W_SEPARATION);
 
     iter_all(n => n.pos_x = n.x);
 }
