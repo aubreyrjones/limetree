@@ -217,8 +217,7 @@ class LiveNode {
         // setup for layout
         this.x = 0; //layout position, copied over to pos_x when ready.
         this.sib_index = -1;
-        this.left_countour = 10000000000;
-        this.right_countour = -10000000000;
+        this.delta = 0.0;
     }
 
     add_child(edge_name, c) {
@@ -245,6 +244,10 @@ class LiveNode {
         let rl = rank_list(my_rank);
         this.rankorder = rl.length;
         rl.push(this);
+    }
+
+    resolve_delta() {
+        this.x += this.delta;
     }
 
     descends_from(v) {
@@ -401,19 +404,21 @@ var _layout = function(v, distance) {
     let wantedMove = lefthandMargin - natural;
 
     if (wantedMove < 0) { // we're moving left, so limit by children
-        let edge = subtree_edge(v);
+        let edge = subtree_left_edge(v);
         wantedMove = constrain_by_edge(edge, wantedMove);
     }
     
-    for (let edge of v.children) {
-        move_tree(edge.target, wantedMove);
-    }
-    v.x += wantedMove;
+    // for (let edge of v.children) {
+    //     move_tree(edge.target, wantedMove);
+    // }
+    // v.x += wantedMove;
+    move_tree_deferred(v, wantedMove);
+
     mark_wave(v);
     return v;
 }
 
-var subtree_edge = function(root) {
+var subtree_left_edge = function(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
         let edgeNode = wave_front(i);
@@ -431,6 +436,24 @@ var subtree_edge = function(root) {
         while (nextLeft && nextLeft.descends_from(root)) {
             edgeNode = nextLeft;
             nextLeft = rank_left(edgeNode);
+        }
+
+        edge.push(edgeNode);
+    }
+    return edge;
+}
+
+var subtree_right_edge = function(root) {
+    let edge = new Array();
+    for (let i = root.rank + 1; i < _rank_lists.length; i++) {
+        let edgeNode = wave_front(i);
+
+        if (edgeNode == null) {
+            continue;
+        }
+
+        if (!edgeNode.descends_from(root)) {
+            continue;
         }
 
         edge.push(edgeNode);
@@ -488,6 +511,22 @@ var constrain_move = function(v, amount, distance) {
     return amount;
 }
 
+var move_tree_deferred = function(root, amount) {
+    // update the root and the right edge of the subtree.
+    root.x += amount;
+
+    let rightEdge = subtree_right_edge(root);
+    for (let n of rightEdge) {
+        n.x += amount;
+    }
+
+    // add a delta for the rest of the children.
+
+    for (let i = 0; i < n.count() - 1; i++) { // right-hand child must, by definition, be in the rightEdge group. Skip it.
+        root.child(i).delta += amount;
+    }
+}
+
 var move_tree = function(v, amount) {
     v.x += amount;
     for (let edge of v.children) {
@@ -498,6 +537,8 @@ var move_tree = function(v, amount) {
 
 var layout_tree = function(root) {
     _layout(root, W_SEPARATION);
+
+    root.resolve_delta();
 
     iter_all(n => n.pos_x = n.x);
 }
