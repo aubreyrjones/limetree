@@ -261,16 +261,6 @@ class LiveNode {
         return this.delta;
     }
 
-    distribute_delta() {
-        this.x += this.delta;
-
-        for (let edge of this.children) {
-            edge.target.delta += this.delta;
-        }
-
-        this.delta = 0;
-    }
-
     descends_from(v) {
         let p = this.parent;
         while (p) {
@@ -549,49 +539,8 @@ var constrain_move = function(v, amount, distance) {
     return amount;
 }
 
-var zip_edges = function(left, right) {
-    let rval = new Array();
-
-    for (let i = 0; i < left.length; i++) {
-        if (left[i] === right[i]) {
-            rval.push({"l" : left[i], "r" : null});
-        }
-        else {
-            rval.push({"l" : left[i], "r" : right[i]});
-        }
-    }
-
-    return rval;
-}
-
-var shift_node = function(n, amount, edgeSet) {
-    n.distribute_delta();
-    n.x += amount;
-    for (let edge of n.children) {
-        if (edgeSet.has(edge.target)) { continue; }
-        edge.target.delta += amount;
-    }
-}
-
 var move_tree_deferred = function(root, amount, leftEdge) {
     root.delta += amount;
-    // update the root and the edges of the subtree.
-
-    // let rightEdge = subtree_right_edge(root);
-    // let edgeSet = new Set();
-    // for (let n of leftEdge) { edgeSet.add(n); }
-    // for (let n of rightEdge) { edgeSet.add(n); }
-
-    // let contour = zip_edges(leftEdge, rightEdge);
-
-    // for (let rank_level of contour.reverse()) {
-    //     shift_node(rank_level.l, amount, edgeSet);
-    //     if (rank_level.r) {
-    //         shift_node(rank_level.r, amount, edgeSet);
-    //     }
-    // }
-
-    // shift_node(root, amount, edgeSet);
 }
 
 var move_tree = function(v, amount) {
