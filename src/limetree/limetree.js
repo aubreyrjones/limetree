@@ -99,7 +99,7 @@ let _styles = {
 let _node_label_keys = [];
 let _payload_mask_objects = [];
 
-var g_pan_x = -500;
+var g_pan_x = -1000;
 var g_pan_y = -50;
 var g_scale = 1.0;
 
@@ -253,11 +253,17 @@ class LiveNode {
     }
 
     distribute_delta() {
-        for (let edge in this.children) {
+        let mysum = this.delta_sum();
+        if (mysum == 0) { return; }
+
+        console.log("woo"); 
+
+        for (let edge of this.children) {
             edge.target.delta += this.delta;
         }
+    
+        console.log("distribute delta", this.delta, mysum);
 
-        let mysum = this.delta_sum();
         this.x += mysum;
         this.delta = -mysum;
     }
@@ -524,12 +530,19 @@ var constrain_move = function(v, amount, distance) {
     return amount;
 }
 
-var node_in = function(n, l) {
-    for (let o of l) {
-        if (o === n) return true;
+var zip_edges = function(left, right) {
+    let rval = new Array();
+
+    for (let i = 0; i < left.length; i++) {
+        if (left[i] === right[i]) {
+            rval.push({"l" : left[i], "r" : null});
+        }
+        else {
+            rval.push({"l" : left[i], "r" : right[i]});
+        }
     }
 
-    return false;
+    return rval;
 }
 
 var move_tree_deferred = function(root, amount, leftEdge) {
@@ -537,33 +550,22 @@ var move_tree_deferred = function(root, amount, leftEdge) {
     root.x += amount;
 
     let rightEdge = subtree_right_edge(root);
+    let edgeSet = new Set();
+    for (let n of leftEdge) { edgeSet.add(n); }
+    for (let n of rightEdge) { edgeSet.add(n); }
 
-    for (let n of leftEdge) {
-        if (n.delta_sum() != 0) {
-            console.log("nonzero delta on left");
-        }
-        n.x += amount;
-        for (let edge of n.children) {
-            if (node_in(edge.target, leftEdge) || node_in(edge.target, rightEdge)) {
-                console.log("child in left edge");
-                continue;
-            }
-            edge.target.delta += amount;
-        }
+    let contour = zip_edges(leftEdge, rightEdge);
+
+
+    for (let n of Array.from(edgeSet).reverse()) {
+        n.distribute_delta();
     }
 
-    
-    for (let n of rightEdge) {
-        if (n.delta_sum() != 0) {
-            console.log("nonzero delta on right");
-        }
+    for (let n of edgeSet) {
         n.x += amount;
-        for (let edge of n.children) {
-            if (node_in(edge.target, leftEdge) || node_in(edge.target, rightEdge)) {
-                console.log("child in right edge");
-                continue;
-            }
-            edge.target.delta += amount;
+        for (let e of n.children) {
+            if (edgeSet.has(e.target)) { continue; }
+            e.target.delta += amount;
         }
     }
 
@@ -571,9 +573,7 @@ var move_tree_deferred = function(root, amount, leftEdge) {
 
     for (let i = 0; i < root.count(); i++) {
         let c = root.child(i);
-        if (node_in(c, leftEdge) || node_in(c, rightEdge)) {
-            continue;
-        }
+        if (edgeSet.has(c)) { continue; }
         c.delta += amount;
     }
 }
@@ -680,7 +680,7 @@ var _wheel_turned = function(e) {
 
 var _displayed_node = null;
 
-var layout_obj = function(parent_div, name, o) {
+var layout_obj = function(parent_div, name, o, extra) {
     let tbl = document.createElement("table");
     parent_div.appendChild(tbl);
     
@@ -689,6 +689,10 @@ var layout_obj = function(parent_div, name, o) {
     titleCell.innerHTML = name;
     titleCell.style = 'text-align:center';
     titleCell.setAttribute("colspan", "2");
+
+    if (extra) {
+        layout_obj(parent_div, "EXTRA", extra);
+    }
 
     for (let pk in o) {
         let r = tbl.insertRow();
@@ -709,7 +713,7 @@ var set_node_data = function(n) {
 
     let info_div = document.getElementById("node_info");
     info_div.innerText = "";
-    layout_obj(info_div, n.label || n.id, n.payload);
+    layout_obj(info_div, n.label || n.id, n.payload, {"delta" : n.delta, "deltasum" : n.delta_sum()});
 }
 
 // Startup
