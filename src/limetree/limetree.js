@@ -52,7 +52,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(500);
+    return sleep(250);
 }
 
 const RANK_SEPARATION = 80.0;
@@ -319,7 +319,7 @@ class LiveNode {
     }
 
     layout_left_side() {
-        return this.x;
+        return this.x + this.delta_sum();
     }
 
     layout_right_side() {
@@ -415,16 +415,20 @@ async function _layout(v, distance) {
     // stack between and above leaves
     let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
     let natural = midpoint - v.halfw();
-    v.x = natural; // set the natural midpoint, but we'll still adjust farther along  
+    v.x = natural; // set the natural midpoint, but we'll still adjust farther along
     
-    if (v.rankorder == 0) {
-        mark_wave(v);
-        await debug_step();
-        return v;
-    }
+    // if (v.rankorder == 0) {
+    //     mark_wave(v);
+    //     await debug_step();
+    //     return v;
+    // }
 
     let lefthand = rank_left(v);
-    let lefthandMargin = lefthand.layout_right_side() + distance;
+    let lefthandMargin = 0;
+    
+    if (lefthand) {
+        lefthandMargin = lefthand.layout_right_side() + distance;
+    }
 
     let wantedMove = lefthandMargin - natural;
 
@@ -444,7 +448,7 @@ async function _layout(v, distance) {
         for (let edge of v.children) {
             move_tree(edge.target, wantedMove);
         }
-        v.x += wantedMove;
+        v.delta += wantedMove;
     }
 
     mark_wave(v);
@@ -503,7 +507,7 @@ var constrain_by_edge = function(edge_list, amount) {
         }
 
         let leftmargin = rank_left(v).layout_right_side() + W_SEPARATION;
-        let targetX = v.x + amount;
+        let targetX = v.layout_left_side() + amount;
         
         let overlap = targetX - leftmargin;
     
@@ -523,7 +527,7 @@ var constrain_move = function(v, amount, distance) {
         // L...X
         // X...L
         let leftmargin = rank_left(v).layout_right_side() + distance;
-        let targetX = v.x + amount;
+        let targetX = v.layout_left_side() + amount;
         
         let overlap = targetX - leftmargin;
         
@@ -570,23 +574,24 @@ var shift_node = function(n, amount, edgeSet) {
 }
 
 var move_tree_deferred = function(root, amount, leftEdge) {
+    root.delta += amount;
     // update the root and the edges of the subtree.
 
-    let rightEdge = subtree_right_edge(root);
-    let edgeSet = new Set();
-    for (let n of leftEdge) { edgeSet.add(n); }
-    for (let n of rightEdge) { edgeSet.add(n); }
+    // let rightEdge = subtree_right_edge(root);
+    // let edgeSet = new Set();
+    // for (let n of leftEdge) { edgeSet.add(n); }
+    // for (let n of rightEdge) { edgeSet.add(n); }
 
-    let contour = zip_edges(leftEdge, rightEdge);
+    // let contour = zip_edges(leftEdge, rightEdge);
 
-    for (let rank_level of contour.reverse()) {
-        shift_node(rank_level.l, amount, edgeSet);
-        if (rank_level.r) {
-            shift_node(rank_level.r, amount, edgeSet);
-        }
-    }
+    // for (let rank_level of contour.reverse()) {
+    //     shift_node(rank_level.l, amount, edgeSet);
+    //     if (rank_level.r) {
+    //         shift_node(rank_level.r, amount, edgeSet);
+    //     }
+    // }
 
-    shift_node(root, amount, edgeSet);
+    // shift_node(root, amount, edgeSet);
 }
 
 var move_tree = function(v, amount) {

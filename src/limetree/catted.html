@@ -326,7 +326,7 @@ class LiveNode {
     }
 
     layout_left_side() {
-        return this.x;
+        return this.x + this.delta_sum();
     }
 
     layout_right_side() {
