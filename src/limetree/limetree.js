@@ -253,13 +253,14 @@ class LiveNode {
     }
 
     distribute_delta() {
+        console.log("distrib");
         let mysum = this.delta_sum();
         if (mysum == 0) { return; }
 
-        console.log("woo"); 
+        console.log("woo");
 
         for (let edge of this.children) {
-            edge.target.delta += this.delta;
+            edge.target.delta += mysum;
         }
     
         console.log("distribute delta", this.delta, mysum);
@@ -405,17 +406,16 @@ var _layout = function(v, distance) {
         _layout(c, distance);
     }
 
-    // stack leaves
+    // stack between and above leaves
     let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
     let natural = midpoint - v.halfw();
-    v.x = natural; // set the natural midpoint, but we'll still adjust farther along
+    v.x = natural; // set the natural midpoint, but we'll still adjust farther along  
     
     if (v.rankorder == 0) {
-        //... unless we're on the left-hand side, in which case we'll just leave it and our subtree alone for now.
         mark_wave(v);
         return v;
     }
-    
+
     let lefthand = rank_left(v);
     let lefthandMargin = lefthand.layout_right_side() + distance;
 
@@ -426,12 +426,18 @@ var _layout = function(v, distance) {
     if (wantedMove < 0) { // we're moving left, so limit by children
         wantedMove = constrain_by_edge(edge, wantedMove);
     }
+
+    let deferred = true;
     
-    // for (let edge of v.children) {
-    //     move_tree(edge.target, wantedMove);
-    // }
-    // v.x += wantedMove;
-    move_tree_deferred(v, wantedMove, edge);
+    if (deferred) {
+        move_tree_deferred(v, wantedMove, edge);
+    }
+    else {
+        for (let edge of v.children) {
+            move_tree(edge.target, wantedMove);
+        }
+        v.x += wantedMove;
+    }
 
     mark_wave(v);
     return v;
@@ -545,9 +551,17 @@ var zip_edges = function(left, right) {
     return rval;
 }
 
+var shift_node = function(n, amount, edgeSet) {
+    n.distribute_delta();
+    n.x += amount;
+    for (let edge of n.children) {
+        if (edgeSet.has(edge.target)) { continue; }
+        edge.target.delta += amount;
+    }
+}
+
 var move_tree_deferred = function(root, amount, leftEdge) {
     // update the root and the edges of the subtree.
-    root.x += amount;
 
     let rightEdge = subtree_right_edge(root);
     let edgeSet = new Set();
@@ -556,26 +570,14 @@ var move_tree_deferred = function(root, amount, leftEdge) {
 
     let contour = zip_edges(leftEdge, rightEdge);
 
-
-    for (let n of Array.from(edgeSet).reverse()) {
-        n.distribute_delta();
-    }
-
-    for (let n of edgeSet) {
-        n.x += amount;
-        for (let e of n.children) {
-            if (edgeSet.has(e.target)) { continue; }
-            e.target.delta += amount;
+    for (let rank_level of contour) {
+        shift_node(rank_level.l, amount, edgeSet);
+        if (rank_level.r) {
+            shift_node(rank_level.r, amount, edgeSet);
         }
     }
 
-    // add a delta for the rest of the children.
-
-    for (let i = 0; i < root.count(); i++) {
-        let c = root.child(i);
-        if (edgeSet.has(c)) { continue; }
-        c.delta += amount;
-    }
+    shift_node(root, amount, edgeSet);
 }
 
 var move_tree = function(v, amount) {
