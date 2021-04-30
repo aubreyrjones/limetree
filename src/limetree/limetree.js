@@ -52,7 +52,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(100);
+    return sleep(250);
 }
 
 const exrp = p => (1.5**p) * (0.15 ** (1 - p));
@@ -110,9 +110,9 @@ let _styles = {
 let _node_label_keys = [];
 let _payload_mask_objects = [];
 
-var g_pan_x = -1000;
-var g_pan_y = -50;
-var g_scale = 1.0;
+var g_pan_x = -1500;
+var g_pan_y = -200;
+var g_scale = 0.6;
 
 var next_node_id = function() {
     let i = _next_node_id;
@@ -158,6 +158,7 @@ class LiveNode {
         this.tag = false;
         this.tag2 = false;
         this.tag3 = false;
+        this.tag4 = false;
 
         // get the id
         if ("!id" in o) {
@@ -272,7 +273,7 @@ class LiveNode {
     }
 
     delta_sum() {
-        this.tag3 = true;
+        //this.tag3 = true;
         if (this.parent) {
             return this.delta + this.parent.delta_sum();
         }
@@ -370,6 +371,7 @@ class LiveNode {
         const tagged = this.tag;
         const tagged2 = this.tag2;
         const tagged3 = this.tag3;
+        const tagged4 = this.tag4;
 
         ctx.lineWidth = 1;
 
@@ -404,6 +406,10 @@ class LiveNode {
                 ctx.strokeStyle = "green";
                 ctx.strokeRect(this.pos_x - 12, this.top() - 12, this.boxwidth + 24, BOX_HEIGHT + 24);
             }
+            if (tagged4) {
+                ctx.strokeStyle = "orange";
+                ctx.strokeRect(this.pos_x - 12, this.top() - 12, this.boxwidth + 24, BOX_HEIGHT + 24);
+            }
         }
         
         ctx.lineWidth = 1;
@@ -417,6 +423,7 @@ class LiveNode {
         this.tag = false;
         this.tag2 = false;
         this.tag3 = false;
+        this.tag4 = false;
     }
 }
 
@@ -452,7 +459,7 @@ async function _layout(v, distance) {
         //_layout(c, distance);
     }
 
-    const rearrangeInners = true;
+    const rearrangeInners = false;
 
     if (rearrangeInners && v.count() > 2) {  // has interior nodes, redistribute them?
         let innerRightMargin = v.child(-1).x - distance;
@@ -512,7 +519,7 @@ async function _layout(v, distance) {
         wantedMove = constrain_by_edge(edge, wantedMove);
     }
 
-    const deferred = false;
+    const deferred = true;
     
     if (deferred) {
         move_tree_deferred(v, wantedMove, edge);
@@ -633,6 +640,7 @@ var move_tree_deferred = function(root, amount, leftEdge) {
 }
 
 var move_tree = function(v, amount) {
+    v.tag4 = true;
     v.x += amount;
     for (let edge of v.children) {
         move_tree(edge.target, amount);
@@ -862,5 +870,5 @@ const NN_node_data = `{"nodes": [{"production": "global_list", "type": null, "va
 const NNN_node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 7, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 8, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 9, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 10, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 11, "line": 2, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 13, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 14, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 15, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 16, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 17, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 18, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 19, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 20, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 21, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 22, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 23, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 24, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 25, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 26, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 27, "line": 4, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 28, "line": 8, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 29, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 30, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 31, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 33, "line": 8, "attr": {}, "c": []}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`
 
 // random graphs
-const N_node_data = `{"nodes": [{"!id": 0, "!label": "WTOEAMTB", "children": [{"!id": 1, "!label": "QLKEI", "children": []}, {"!id": 2, "!label": "AJUFJREXABEVYR", "children": [{"!id": 3, "!label": "OMBTL", "children": [{"!id": 4, "!label": "BHEVDXD", "children": [{"!id": 5, "!label": "TNXVYJXRSQEP", "children": []}]}, {"!id": 6, "!label": "TKKRTNPHESO", "children": [{"!id": 7, "!label": "TTVPCFPUN", "children": [{"!id": 8, "!label": "VDHQX", "children": [{"!id": 9, "!label": "VCOTQT", "children": [{"!id": 10, "!label": "EFSNTSSVVYF", "children": [{"!id": 11, "!label": "OHJLMBCMTUFRN", "children": [{"!id": 12, "!label": "KXFWTACNPFV", "children": []}, {"!id": 13, "!label": "MDJOTOOHTO", "children": []}, {"!id": 14, "!label": "IFYQIOANGA", "children": []}, {"!id": 15, "!label": "LGRITMAFAONCU", "children": []}]}]}, {"!id": 16, "!label": "CHRIFGUYBQK", "children": [{"!id": 17, "!label": "XQLTIGFMXQNEGO", "children": []}, {"!id": 18, "!label": "KOIYCJPPJGBF", "children": [{"!id": 19, "!label": "WRVRBHDO", "children": []}]}, {"!id": 20, "!label": "IGIEQPGKU", "children": []}]}, {"!id": 21, "!label": "ADSGRHHKND", "children": [{"!id": 22, "!label": "LROVCAKXKLJDV", "children": [{"!id": 23, "!label": "ISBQKYMKDG", "children": []}, {"!id": 24, "!label": "AACVGDGX", "children": []}, {"!id": 25, "!label": "RETOOORNY", "children": []}]}, {"!id": 26, "!label": "XQCEI", "children": [{"!id": 27, "!label": "UOSXNKINKJ", "children": []}]}]}]}]}]}, {"!id": 28, "!label": "NQLVB", "children": []}, {"!id": 29, "!label": "PFVXSTCWBRDW", "children": [{"!id": 30, "!label": "BKCRKY", "children": [{"!id": 31, "!label": "MWBDWHDVMDSPX", "children": [{"!id": 32, "!label": "IJAVPIP", "children": [{"!id": 33, "!label": "RKDVK", "children": [{"!id": 34, "!label": "APEKAG", "children": []}, {"!id": 35, "!label": "WWKDEDJBY", "children": []}, {"!id": 36, "!label": "PUHKSUHBOCLAE", "children": []}, {"!id": 37, "!label": "OQMGE", "children": []}]}]}]}, {"!id": 38, "!label": "CICMRWCCQVGG", "children": [{"!id": 39, "!label": "NOSBWTPPK", "children": []}]}]}, {"!id": 40, "!label": "OQIFPJR", "children": [{"!id": 41, "!label": "MVNUEEIKYQKPXM", "children": [{"!id": 42, "!label": "CSUHUYDR", "children": [{"!id": 43, "!label": "JIKLRTFXPM", "children": [{"!id": 44, "!label": "OAREIEDKDYHN", "children": []}, {"!id": 45, "!label": "FRVJUMUPGT", "children": []}, {"!id": 46, "!label": "KXXSOGNFWASTJS", "children": []}]}, {"!id": 47, "!label": "WNUQWE", "children": [{"!id": 48, "!label": "IRDHSMWPNYF", "children": []}, {"!id": 49, "!label": "TIFPOVXO", "children": []}]}]}]}]}]}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": [], "payload_objects": []}`
-const _node_data = `{"nodes": [{"!id": 0, "!label": "RSWGTTVKPHAV", "children": [{"!id": 1, "!label": "UCOUGPLLGRK", "children": []}, {"!id": 2, "!label": "EXHCTEBVRXPA", "children": [{"!id": 3, "!label": "LRDXCQNOMIO", "children": [{"!id": 4, "!label": "YAFRWXMQMASYF", "children": [{"!id": 5, "!label": "TXWGKHRBPHAJN", "children": [{"!id": 6, "!label": "XKYTLED", "children": []}]}, {"!id": 7, "!label": "EOAFYTJYJGC", "children": [{"!id": 8, "!label": "LMWYXFQQDUV", "children": []}]}, {"!id": 9, "!label": "XDPDLPY", "children": [{"!id": 10, "!label": "KLWNSOQUBMJP", "children": [{"!id": 11, "!label": "GDVMUWR", "children": [{"!id": 12, "!label": "FXVSNRHKTPENWP", "children": [{"!id": 13, "!label": "QEEORNIG", "children": []}, {"!id": 14, "!label": "NXTKFSLXKEAUFU", "children": [{"!id": 15, "!label": "JBBMMS", "children": []}, {"!id": 16, "!label": "RMIMU", "children": []}]}, {"!id": 17, "!label": "LGOQGJAWFFIBL", "children": [{"!id": 18, "!label": "YNHSGIRYVJBBTQ", "children": []}, {"!id": 19, "!label": "NAMWW", "children": []}]}, {"!id": 20, "!label": "TMBNPNF", "children": []}]}, {"!id": 21, "!label": "WKCJQTDL", "children": [{"!id": 22, "!label": "YVLNWSEN", "children": [{"!id": 23, "!label": "GYMQNHEYXRLBT", "children": []}, {"!id": 24, "!label": "IEQNYQEUQLXRI", "children": []}, {"!id": 25, "!label": "YKKAEO", "children": []}]}, {"!id": 26, "!label": "YYBNBMU", "children": [{"!id": 27, "!label": "CDYHGNVPRJTUP", "children": []}]}]}]}, {"!id": 28, "!label": "UBNQLOITHQFGXX", "children": [{"!id": 29, "!label": "UPSRTMV", "children": [{"!id": 30, "!label": "BLODCPXFP", "children": [{"!id": 31, "!label": "VXDQCKAFKDP", "children": []}, {"!id": 32, "!label": "QPXLV", "children": []}]}, {"!id": 33, "!label": "BGJHDNGHBFNTE", "children": [{"!id": 34, "!label": "WVBHD", "children": []}, {"!id": 35, "!label": "KTWMAFMEOQCJF", "children": []}, {"!id": 36, "!label": "VCWSVPREY", "children": []}, {"!id": 37, "!label": "TITWKWICD", "children": []}]}]}, {"!id": 38, "!label": "SPPNKGY", "children": [{"!id": 39, "!label": "WILHQPS", "children": [{"!id": 40, "!label": "YRSOCLSBPK", "children": []}]}]}, {"!id": 41, "!label": "YDMHLCOVW", "children": [{"!id": 42, "!label": "TYBTLAQIRIF", "children": [{"!id": 43, "!label": "XBPUKIKMO", "children": []}]}, {"!id": 44, "!label": "ESDXTQOUBEIE", "children": [{"!id": 45, "!label": "VCRVNKSWDH", "children": []}, {"!id": 46, "!label": "VHQUADHIHROXB", "children": []}, {"!id": 47, "!label": "VVOLFMKEPRFNR", "children": []}]}]}]}, {"!id": 48, "!label": "XBHSCYAEAVQO", "children": [{"!id": 49, "!label": "ISLYQJLU", "children": []}]}]}]}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": [], "payload_objects": []}`
+const _node_data = `{"nodes": [{"!id": 0, "!label": "WTOEAMTB", "children": [{"!id": 1, "!label": "QLKEI", "children": []}, {"!id": 2, "!label": "AJUFJREXABEVYR", "children": [{"!id": 3, "!label": "OMBTL", "children": [{"!id": 4, "!label": "BHEVDXD", "children": [{"!id": 5, "!label": "TNXVYJXRSQEP", "children": []}]}, {"!id": 6, "!label": "TKKRTNPHESO", "children": [{"!id": 7, "!label": "TTVPCFPUN", "children": [{"!id": 8, "!label": "VDHQX", "children": [{"!id": 9, "!label": "VCOTQT", "children": [{"!id": 10, "!label": "EFSNTSSVVYF", "children": [{"!id": 11, "!label": "OHJLMBCMTUFRN", "children": [{"!id": 12, "!label": "KXFWTACNPFV", "children": []}, {"!id": 13, "!label": "MDJOTOOHTO", "children": []}, {"!id": 14, "!label": "IFYQIOANGA", "children": []}, {"!id": 15, "!label": "LGRITMAFAONCU", "children": []}]}]}, {"!id": 16, "!label": "CHRIFGUYBQK", "children": [{"!id": 17, "!label": "XQLTIGFMXQNEGO", "children": []}, {"!id": 18, "!label": "KOIYCJPPJGBF", "children": [{"!id": 19, "!label": "WRVRBHDO", "children": []}]}, {"!id": 20, "!label": "IGIEQPGKU", "children": []}]}, {"!id": 21, "!label": "ADSGRHHKND", "children": [{"!id": 22, "!label": "LROVCAKXKLJDV", "children": [{"!id": 23, "!label": "ISBQKYMKDG", "children": []}, {"!id": 24, "!label": "AACVGDGX", "children": []}, {"!id": 25, "!label": "RETOOORNY", "children": []}]}, {"!id": 26, "!label": "XQCEI", "children": [{"!id": 27, "!label": "UOSXNKINKJ", "children": []}]}]}]}]}]}, {"!id": 28, "!label": "NQLVB", "children": []}, {"!id": 29, "!label": "PFVXSTCWBRDW", "children": [{"!id": 30, "!label": "BKCRKY", "children": [{"!id": 31, "!label": "MWBDWHDVMDSPX", "children": [{"!id": 32, "!label": "IJAVPIP", "children": [{"!id": 33, "!label": "RKDVK", "children": [{"!id": 34, "!label": "APEKAG", "children": []}, {"!id": 35, "!label": "WWKDEDJBY", "children": []}, {"!id": 36, "!label": "PUHKSUHBOCLAE", "children": []}, {"!id": 37, "!label": "OQMGE", "children": []}]}]}]}, {"!id": 38, "!label": "CICMRWCCQVGG", "children": [{"!id": 39, "!label": "NOSBWTPPK", "children": []}]}]}, {"!id": 40, "!label": "OQIFPJR", "children": [{"!id": 41, "!label": "MVNUEEIKYQKPXM", "children": [{"!id": 42, "!label": "CSUHUYDR", "children": [{"!id": 43, "!label": "JIKLRTFXPM", "children": [{"!id": 44, "!label": "OAREIEDKDYHN", "children": []}, {"!id": 45, "!label": "FRVJUMUPGT", "children": []}, {"!id": 46, "!label": "KXXSOGNFWASTJS", "children": []}]}, {"!id": 47, "!label": "WNUQWE", "children": [{"!id": 48, "!label": "IRDHSMWPNYF", "children": []}, {"!id": 49, "!label": "TIFPOVXO", "children": []}]}]}]}]}]}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": [], "payload_objects": []}`
+const NNNN_node_data = `{"nodes": [{"!id": 0, "!label": "RSWGTTVKPHAV", "children": [{"!id": 1, "!label": "UCOUGPLLGRK", "children": []}, {"!id": 2, "!label": "EXHCTEBVRXPA", "children": [{"!id": 3, "!label": "LRDXCQNOMIO", "children": [{"!id": 4, "!label": "YAFRWXMQMASYF", "children": [{"!id": 5, "!label": "TXWGKHRBPHAJN", "children": [{"!id": 6, "!label": "XKYTLED", "children": []}]}, {"!id": 7, "!label": "EOAFYTJYJGC", "children": [{"!id": 8, "!label": "LMWYXFQQDUV", "children": []}]}, {"!id": 9, "!label": "XDPDLPY", "children": [{"!id": 10, "!label": "KLWNSOQUBMJP", "children": [{"!id": 11, "!label": "GDVMUWR", "children": [{"!id": 12, "!label": "FXVSNRHKTPENWP", "children": [{"!id": 13, "!label": "QEEORNIG", "children": []}, {"!id": 14, "!label": "NXTKFSLXKEAUFU", "children": [{"!id": 15, "!label": "JBBMMS", "children": []}, {"!id": 16, "!label": "RMIMU", "children": []}]}, {"!id": 17, "!label": "LGOQGJAWFFIBL", "children": [{"!id": 18, "!label": "YNHSGIRYVJBBTQ", "children": []}, {"!id": 19, "!label": "NAMWW", "children": []}]}, {"!id": 20, "!label": "TMBNPNF", "children": []}]}, {"!id": 21, "!label": "WKCJQTDL", "children": [{"!id": 22, "!label": "YVLNWSEN", "children": [{"!id": 23, "!label": "GYMQNHEYXRLBT", "children": []}, {"!id": 24, "!label": "IEQNYQEUQLXRI", "children": []}, {"!id": 25, "!label": "YKKAEO", "children": []}]}, {"!id": 26, "!label": "YYBNBMU", "children": [{"!id": 27, "!label": "CDYHGNVPRJTUP", "children": []}]}]}]}, {"!id": 28, "!label": "UBNQLOITHQFGXX", "children": [{"!id": 29, "!label": "UPSRTMV", "children": [{"!id": 30, "!label": "BLODCPXFP", "children": [{"!id": 31, "!label": "VXDQCKAFKDP", "children": []}, {"!id": 32, "!label": "QPXLV", "children": []}]}, {"!id": 33, "!label": "BGJHDNGHBFNTE", "children": [{"!id": 34, "!label": "WVBHD", "children": []}, {"!id": 35, "!label": "KTWMAFMEOQCJF", "children": []}, {"!id": 36, "!label": "VCWSVPREY", "children": []}, {"!id": 37, "!label": "TITWKWICD", "children": []}]}]}, {"!id": 38, "!label": "SPPNKGY", "children": [{"!id": 39, "!label": "WILHQPS", "children": [{"!id": 40, "!label": "YRSOCLSBPK", "children": []}]}]}, {"!id": 41, "!label": "YDMHLCOVW", "children": [{"!id": 42, "!label": "TYBTLAQIRIF", "children": [{"!id": 43, "!label": "XBPUKIKMO", "children": []}]}, {"!id": 44, "!label": "ESDXTQOUBEIE", "children": [{"!id": 45, "!label": "VCRVNKSWDH", "children": []}, {"!id": 46, "!label": "VHQUADHIHROXB", "children": []}, {"!id": 47, "!label": "VVOLFMKEPRFNR", "children": []}]}]}]}, {"!id": 48, "!label": "XBHSCYAEAVQO", "children": [{"!id": 49, "!label": "ISLYQJLU", "children": []}]}]}]}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": [], "payload_objects": []}`

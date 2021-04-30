@@ -11,9 +11,17 @@ cur_node_count = 0
 
 random.seed()
 
+def no_naughty(w):
+    for bad_word in BAD_WORDS:
+        if bad_word in w:
+             return False
+    return True
+
 def rand_name():
-    l = random.randrange(MIN_NAME_LENGTH, MAX_NAME_LENGTH)
-    return "".join([chr(random.randrange(ord('A'), ord('Z'))) for i in range(l)])
+    while True:
+        l = random.randrange(MIN_NAME_LENGTH, MAX_NAME_LENGTH)
+        w = "".join([chr(random.randrange(ord('A'), ord('Z'))) for i in range(l)])
+        if no_naughty(w): return w
 
 def rand_node(depth = 0):
     if depth >= MAX_DEPTH: return None
