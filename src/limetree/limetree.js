@@ -52,7 +52,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(250);
+    return sleep(500);
 }
 
 const exrp = p => (1.5**p) * (0.15 ** (1 - p));
@@ -78,17 +78,28 @@ var rank_list = function (rank) {
     return _rank_lists[rank];
 }
 
-var rank_left = function(v) {
+function rank_left(v) {
     if (v.rankorder <= 0) return null;
     return rank_list(v.rank)[v.rankorder - 1];
 }
 
+function rank_right(v) {
+    if (v.rankorder >= rightmost_placed_for_rank(v)) return null;
+    return rank_list(v.rank)[v.rankorder + 1];
+}
+
+// record the rankorder of the rightmost node to be placed for this rank.
 var mark_wave = function(v) {
     _rank_wave[v.rank] = v.rankorder;
 }
 
+function rightmost_placed_for_rank(rank) {
+    return _rank_wave[rank];
+}
+
+// get the last placed node in the rank
 var wave_front = function(rank) {
-    let entry = _rank_wave[rank];
+    let entry = rightmost_placed_for_rank(rank);
     if (entry < 0) return null;
     let rl = rank_list(rank);
     
@@ -332,11 +343,21 @@ class LiveNode {
     layout_right_side() {
         this.tag = true;
         return this.x + this.delta_sum() + this.boxwidth;
-        //return this.layout_left_side() + this.boxwidth;
+        //return this.layout_left_side() + this.boxwidth; // separated for tagging
+    }
+
+    layout_center() {
+        return this.layout_left_side() + this.halfw();
     }
 
     layout_natural_right() {
         return this.x + this.boxwidth; // NO DELTA
+    }
+
+    right_sib() {
+        if (!this.parent) return null;
+        if (this.sib_index >= this.parent.count() - 1) return null; //right-most child
+        return this.parent.child(this.sib_index + 1);
     }
 
     child(index) {
@@ -459,45 +480,7 @@ async function _layout(v, distance) {
         //_layout(c, distance);
     }
 
-    const rearrangeInners = false;
-
-    if (rearrangeInners && v.count() > 2) {  // has interior nodes, redistribute them?
-        let innerRightMargin = v.child(-1).x - distance;
-        let innerLeftMargin = v.child(0).layout_natural_right() + distance;
-        let range = innerRightMargin - innerLeftMargin;
-        let innerCount = v.count() - 2;
-
-        let usedSpace = 0;
-        for (let i = 1; i < v.count() - 1; i++) {
-            usedSpace += v.child(i).boxwidth; // constant time, non-recursive
-        }
-        usedSpace += (innerCount - 1) * distance;
-
-        console.log("range, usedspace, innercount", range, usedSpace, innerCount);
-
-        if (range > usedSpace) {
-            let leftChild = v.child(0);
-
-            if (innerCount == 1) {
-                //v.child(1).center_at(distance + leftChild.layout_natural_right() + (range / 2));
-            }
-            else {
-                let spacing = (range - usedSpace) / (innerCount + 1);
-
-                console.log("innercount, available, spacing", innerCount, (range - usedSpace), spacing);
-                
-                for (let i = 1; i < v.count() - 1; i++) {
-                    let rightChild = v.child(i);
-                    
-                    rightChild.x = leftChild.layout_natural_right() + spacing;
-
-                    console.log("lc, lcr, rcl", leftChild.label, leftChild.layout_natural_right(), rightChild.label, rightChild.x);
-                    
-                    leftChild = rightChild;
-                }
-            }
-        }
-    }
+    
 
     // stack between and above leaves
     let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
@@ -513,16 +496,67 @@ async function _layout(v, distance) {
 
     let wantedMove = lefthandMargin - natural;
 
-    let edge = subtree_left_edge(v);
+    let edge = wavefront_subtree_left_edge(v);
 
     if (wantedMove < 0) { // we're moving left, so limit by children
-        wantedMove = constrain_by_edge(edge, wantedMove);
+        wantedMove = constrain_by_left_edge(edge, wantedMove);
     }
 
-    const deferred = true;
-    
+    do_constrained_move(v, wantedMove);
+
+    // const deferred = true;
+    // if (deferred) {
+    //     move_tree_deferred(v, wantedMove, edge);
+    // }
+    // else {
+    //     console.log("Moving subtree.");
+    //     for (let edge of v.children) {
+    //         move_tree(edge.target, wantedMove);
+    //     }
+    //     v.x += wantedMove;
+    // }
+
+    const rearrangeInners = true;
+    if (rearrangeInners) {
+        let myMid = v.layout_center();
+        // the goal here is to let child nodes to the left of us "relax"
+        for (let e of v.children.slice(0, -1).reverse()) { // skip the right-most child, who has a well-defined spot.
+            let c = e.target;
+            let stress = myMid - c.layout_center();
+            if (stress > 0) {
+                console.log("Stressed", c.label);
+                c.tag4 = true;
+                let maxSlip = c.right_sib().layout_left_side() - distance - c.boxwidth - c.layout_left_side();
+                console.log("me, rightside, stress, slip", c.label, c.right_sib().label, stress, maxSlip);
+                if (maxSlip < 0) maxSlip = 0;
+                let childDesiredMove = maxSlip < stress ? maxSlip : stress;
+                //c.x += maxSlip < stress ? maxSlip : stress;
+                do_constrained_move(c, childDesiredMove);
+            }
+        }
+    }
+
+    mark_wave(v);
+    await debug_step(); // DEBUG
+    return v;
+}
+
+function do_constrained_move(v, wantedMove) {
+    if (wantedMove < 0) { // we're moving left
+        let leftEdge = wavefront_subtree_left_edge(v);
+        wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
+    }
+    else if (wantedMove > 0) {
+        let rightEdge = wavefront_subtree_right_edge(v);
+        wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
+    }
+    else { // 0 move, just bail
+        return; 
+    }
+
+    const deferred = false;
     if (deferred) {
-        move_tree_deferred(v, wantedMove, edge);
+        move_tree_deferred(v, wantedMove, leftEdge);
     }
     else {
         console.log("Moving subtree.");
@@ -530,15 +564,10 @@ async function _layout(v, distance) {
             move_tree(edge.target, wantedMove);
         }
         v.x += wantedMove;
-    }
-
-
-    mark_wave(v);
-    await debug_step(); // DEBUG
-    return v;
+    }    
 }
 
-var subtree_left_edge = function(root) {
+function wavefront_subtree_left_edge(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
         let edgeNode = wave_front(i);
@@ -566,7 +595,7 @@ var subtree_left_edge = function(root) {
     return edge;
 }
 
-var subtree_right_edge = function(root) {
+var wavefront_subtree_right_edge = function(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
         let edgeNode = wave_front(i);
@@ -584,7 +613,7 @@ var subtree_right_edge = function(root) {
     return edge;
 }
 
-var constrain_by_edge = function(edge_list, amount) {
+function constrain_by_left_edge(edge_list, amount) {
     for (let v of edge_list) {
 
         if (v.rankorder == 0) {
@@ -596,6 +625,23 @@ var constrain_by_edge = function(edge_list, amount) {
         
         let overlap = targetX - leftmargin;
     
+        
+        if (overlap < 0) {
+            amount -= overlap;
+        }
+    }
+    return amount;
+}
+
+function constrain_by_right_edge(edge_list, amount) {
+    for (let v of edge_list) {
+        let rightNeighbor = rank_right(v);
+        if (!rightNeighbor) continue;
+
+        let rightMargin = rightNeighbor.layout_left_side() - W_SEPARATION;
+        let targetX = v.layout_right_side() + amount;
+
+        let overlap = targetX - rightMargin;
         
         if (overlap < 0) {
             amount -= overlap;
@@ -640,7 +686,7 @@ var move_tree_deferred = function(root, amount, leftEdge) {
 }
 
 var move_tree = function(v, amount) {
-    v.tag4 = true;
+    //v.tag4 = true;
     v.x += amount;
     for (let edge of v.children) {
         move_tree(edge.target, amount);
