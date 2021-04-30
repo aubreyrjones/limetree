@@ -516,7 +516,7 @@ async function _layout(v, distance) {
     //     v.x += wantedMove;
     // }
 
-    const rearrangeInners = true;
+    const rearrangeInners = false;
     if (rearrangeInners) {
         let myMid = v.layout_center();
         // the goal here is to let child nodes to the left of us "relax"
@@ -567,30 +567,65 @@ function do_constrained_move(v, wantedMove) {
     }    
 }
 
+function search_rank_left_for_descendant(root, rank) {
+    root.tag3 = true;
+    let waveFront = wave_front(rank);
+    if (!waveFront) return null;
+    if (waveFront.descends_from(root)) return waveFront;
+
+    while (waveFront = rank_left(waveFront)) {
+        if (waveFront.descends_from(root)) return waveFront;
+    }
+
+    return null;
+}
+
+function search_rank_for_left_edge(root, startNode) {
+    let nextLeft = rank_left(startNode);
+    
+    while (nextLeft && nextLeft.descends_from(root)) {
+        nextLeft.tag3 = true;
+        startNode = nextLeft;
+        nextLeft = rank_left(startNode);
+    }
+
+    return startNode;
+}
+
 function wavefront_subtree_left_edge(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
-        let edgeNode = wave_front(i);
 
-        if (edgeNode == null) {
-            continue;
+        const generalSearch = true;
+        if (generalSearch) {
+            let edgeNode = search_rank_left_for_descendant(root, i);
+            if (!edgeNode) continue;
+            edge.push(search_rank_for_left_edge(root, edgeNode));
         }
+        else {
+            
+            let edgeNode = wave_front(i);
 
-        if (!edgeNode.descends_from(root)) {
-            continue;
+            if (edgeNode == null) {
+                continue;
+            }
+
+            if (!edgeNode.descends_from(root)) {
+                continue;
+            }
+
+            edgeNode.tag3 = true;
+            let nextLeft = rank_left(edgeNode);
+
+            while (nextLeft && nextLeft.descends_from(root)) {
+                nextLeft.tag3 = true;
+                edgeNode = nextLeft;
+                nextLeft = rank_left(edgeNode);
+            }
+
+
+            edge.push(edgeNode);
         }
-
-        edgeNode.tag3 = true;
-        let nextLeft = rank_left(edgeNode);
-
-        while (nextLeft && nextLeft.descends_from(root)) {
-            nextLeft.tag3 = true;
-            edgeNode = nextLeft;
-            nextLeft = rank_left(edgeNode);
-        }
-
-
-        edge.push(edgeNode);
     }
     return edge;
 }
@@ -598,17 +633,26 @@ function wavefront_subtree_left_edge(root) {
 var wavefront_subtree_right_edge = function(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
-        let edgeNode = wave_front(i);
-
-        if (edgeNode == null) {
-            continue;
+        
+        const generalSearch = true;
+        if (generalSearch) {
+            let edgeNode = search_rank_left_for_descendant(root, i);
+            if (!edgeNode) continue;
+            edge.push(edgeNode);
         }
+        else {
+            let edgeNode = wave_front(i);
 
-        if (!edgeNode.descends_from(root)) {
-            continue;
+            if (edgeNode == null) {
+                continue;
+            }
+
+            if (!edgeNode.descends_from(root)) {
+                continue;
+            }
+
+            edge.push(edgeNode);
         }
-
-        edge.push(edgeNode);
     }
     return edge;
 }
