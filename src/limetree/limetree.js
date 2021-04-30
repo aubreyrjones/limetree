@@ -52,8 +52,10 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(250);
+    return sleep(750);
 }
+
+const exrp = p => (1.5**p) * (0.15 ** (1 - p));
 
 const RANK_SEPARATION = 80.0;
 const BOX_W_MARGIN = 4;
@@ -144,6 +146,7 @@ class LiveNode {
     constructor(o) {
         // Payload, general tree pointers, and style information.
         this.parent = null;
+        this.ancestors = new Set();
         this.rank = 0;
         this.rankorder = -1;
         this.payload = {};
@@ -152,7 +155,8 @@ class LiveNode {
         this.pos_y = RANK_SEPARATION * this.rank;
         this.boxwidth = 100;
         this.style = "default";
-        
+        this.tag = false;
+        this.tag2 = false;
 
         // get the id
         if ("!id" in o) {
@@ -235,9 +239,14 @@ class LiveNode {
         this.boxwidth = labelWidth + (BOX_W_MARGIN * 2);
     }
 
-    rank_self(my_rank) {
+    rank_self(my_rank, parent_ancestors) {
+        parent_ancestors.forEach(item => this.ancestors.add(item));
+        if (this.parent) {
+            this.ancestors.add(this.parent);
+        }
+
         for (let edge of this.children) {
-            edge.target.rank_self(my_rank + 1);
+            edge.target.rank_self(my_rank + 1, this.ancestors);
         }
 
         this.rank = my_rank;
@@ -254,6 +263,13 @@ class LiveNode {
         }
     }
 
+    non_tagging_delta_sum() {
+        if (this.parent) {
+            return this.delta + this.parent.non_tagging_delta_sum();
+        }
+        return this.delta;
+    }
+
     delta_sum() {
         if (this.parent) {
             return this.delta + this.parent.delta_sum();
@@ -264,6 +280,7 @@ class LiveNode {
     descends_from(v) {
         let p = this.parent;
         while (p) {
+            p.tag = true;
             if (p == v) {
                 return true;
             }
@@ -345,7 +362,12 @@ class LiveNode {
     }
 
     draw(ctx) {
-        this.pos_x = this.x + this.delta_sum();
+        const tagged = this.tag;
+        const tagged2 = this.tag2;
+
+        ctx.lineWidth = 1;
+
+        this.pos_x = this.x + this.non_tagging_delta_sum();
 
         ctx.font = this.font
         let label = this.label || this.id;
@@ -355,19 +377,35 @@ class LiveNode {
         ctx.strokeStyle = 'black';
         for (let ck in this.children) {
             let c = this.children[ck].target;
-            c.pos_x = c.x + c.delta_sum();
+            c.pos_x = c.x + c.non_tagging_delta_sum();
             ctx.beginPath();
             ctx.moveTo(this.center(), this.pos_y);
             ctx.lineTo(c.center(), c.pos_y);
             ctx.stroke();
         }
 
+        if (tagged || tagged2) {
+            ctx.lineWidth = 4;
+            if (tagged) {
+                ctx.strokeStyle = "red";
+                ctx.strokeRect(this.pos_x - 4, this.top() - 4, this.boxwidth + 8, BOX_HEIGHT + 8);
+            }
+            if (tagged2) {
+                ctx.strokeStyle = "blue";
+                ctx.strokeRect(this.pos_x - 8, this.top() - 8, this.boxwidth + 16, BOX_HEIGHT + 16);
+            }
+        }
+        
+        ctx.lineWidth = 1;
         ctx.strokeStyle = style.outline;
         ctx.fillStyle = style.fillStyle;
         ctx.fillRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
         ctx.strokeRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
+
+        this.tag = false;
+        this.tag2 = false;
     }
 }
 
@@ -382,6 +420,7 @@ var greatest = function(a, b) {
 }
 
 async function _layout(v, distance) {
+    v.tag = true;
     if (v.rankorder > 0) {
         v.x = rank_left(v).layout_right_side() + distance;
     }
@@ -428,7 +467,7 @@ async function _layout(v, distance) {
         wantedMove = constrain_by_edge(edge, wantedMove);
     }
 
-    let deferred = true;
+    const deferred = true;
     
     if (deferred) {
         move_tree_deferred(v, wantedMove, edge);
@@ -459,12 +498,15 @@ var subtree_left_edge = function(root) {
             continue;
         }
 
+        edgeNode.tag2 = true;
         let nextLeft = rank_left(edgeNode);
 
         while (nextLeft && nextLeft.descends_from(root)) {
+            nextLeft.tag2 = true;
             edgeNode = nextLeft;
             nextLeft = rank_left(edgeNode);
         }
+
 
         edge.push(edgeNode);
     }
@@ -577,6 +619,8 @@ var _drag_pan_y;
 var _user_drag_start_x;
 var _user_drag_start_y;
 
+var _zoom_param = 0.8;
+
 var _select_node = function(x, y) {
     for (let rl of _rank_lists) {
         let example = rl[0];
@@ -631,8 +675,11 @@ var _mouse_moved = function(e) {
 }
 
 var _wheel_turned = function(e) {
+    _zoom_param += -e.deltaY * 0.001;
+    if (_zoom_param > 1) _zoom_param = 1;
+    if (_zoom_param < 0) _zoom_param = 0;
     let oldMouse = xform_point(_cur_x, _cur_y);
-    g_scale += -e.deltaY * 0.01;
+    g_scale = exrp(_zoom_param);
     if (g_scale < 0.05) g_scale = 0.05;
     if (g_scale > 2.0) g_scale = 2.0;
 
@@ -678,7 +725,7 @@ var set_node_data = function(n) {
 
     let info_div = document.getElementById("node_info");
     info_div.innerText = "";
-    layout_obj(info_div, n.label || n.id, n.payload, {"delta" : n.delta, "deltasum" : n.delta_sum()});
+    layout_obj(info_div, n.label || n.id, n.payload);//, {"delta" : n.delta, "deltasum" : n.delta_sum()});
 }
 
 // Startup
@@ -707,7 +754,7 @@ var load_nodes = function() {
         //not yet implemented
     }
 
-    _root_node.rank_self(0);
+    _root_node.rank_self(0, new Set());
 }
 
 
