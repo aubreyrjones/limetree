@@ -52,7 +52,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(500);
+    return sleep(100);
 }
 
 const exrp = p => (1.5**p) * (0.15 ** (1 - p));
@@ -496,25 +496,13 @@ async function _layout(v, distance) {
 
     let wantedMove = lefthandMargin - natural;
 
-    let edge = wavefront_subtree_left_edge(v);
+    // let edge = wavefront_subtree_left_edge(v);
 
-    if (wantedMove < 0) { // we're moving left, so limit by children
-        wantedMove = constrain_by_left_edge(edge, wantedMove);
-    }
-
-    do_constrained_move(v, wantedMove);
-
-    // const deferred = true;
-    // if (deferred) {
-    //     move_tree_deferred(v, wantedMove, edge);
+    // if (wantedMove < 0) { // we're moving left, so limit by children
+    //     wantedMove = constrain_by_left_edge(edge, wantedMove);
     // }
-    // else {
-    //     console.log("Moving subtree.");
-    //     for (let edge of v.children) {
-    //         move_tree(edge.target, wantedMove);
-    //     }
-    //     v.x += wantedMove;
-    // }
+
+    do_constrained_move(v, wantedMove, false);    
 
     const rearrangeInners = false;
     if (rearrangeInners) {
@@ -541,22 +529,23 @@ async function _layout(v, distance) {
     return v;
 }
 
-function do_constrained_move(v, wantedMove) {
-    if (wantedMove < 0) { // we're moving left
+function do_constrained_move(v, wantedMove, doRightCheck = true) {
+    console.log("constrained move", v.label);
+    if (wantedMove == 0) { 
+        return; 
+    }
+    else if (wantedMove < 0) { // we're moving left
         let leftEdge = wavefront_subtree_left_edge(v);
         wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
     }
-    else if (wantedMove > 0) {
+    else if (doRightCheck && wantedMove > 0) {
         let rightEdge = wavefront_subtree_right_edge(v);
         wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
     }
-    else { // 0 move, just bail
-        return; 
-    }
 
-    const deferred = false;
+    const deferred = true;
     if (deferred) {
-        move_tree_deferred(v, wantedMove, leftEdge);
+        move_tree_deferred(v, wantedMove);
     }
     else {
         console.log("Moving subtree.");
@@ -682,6 +671,8 @@ function constrain_by_right_edge(edge_list, amount) {
         let rightNeighbor = rank_right(v);
         if (!rightNeighbor) continue;
 
+        console.log("CONSTRAIN RIGHT WITH NEIGHBOR", rightNeighbor.label);
+
         let rightMargin = rightNeighbor.layout_left_side() - W_SEPARATION;
         let targetX = v.layout_right_side() + amount;
 
@@ -694,36 +685,8 @@ function constrain_by_right_edge(edge_list, amount) {
     return amount;
 }
 
-var constrain_move = function(v, amount, distance) {
-    if (v.rankorder < 1) return amount; // if there's nobody to the left in our rank, allow full move.
-    
-    if (rank_left(v).parent != v.parent) {
-        // L...X
-        // X...L
-        let leftmargin = rank_left(v).layout_right_side() + distance;
-        let targetX = v.layout_left_side() + amount;
-        
-        let overlap = targetX - leftmargin;
-        
-        if (overlap < 0) {
-            amount -= overlap;
-        }
-    }
-    else {
-        console.log("SIBLINGS!");
-    }
 
-    for (let edge of v.children) {
-        let _allowed = constrain_move(edge.target, amount, distance);
-        if (_allowed > amount) {
-            amount = _allowed;
-        }
-    }
-
-    return amount;
-}
-
-var move_tree_deferred = function(root, amount, leftEdge) {
+var move_tree_deferred = function(root, amount) {
     //root.delta += amount;
     root.x += amount;
     root.children.forEach(e => e.target.delta += amount);
