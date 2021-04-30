@@ -160,6 +160,7 @@ class LiveNode {
         this.ancestors = new Set();
         this.rank = 0;
         this.rankorder = -1;
+        this.maxdepth = 0;
         this.payload = {};
         this.children = new Array();
         this.pos_x = -2000;
@@ -253,20 +254,25 @@ class LiveNode {
     }
 
     rank_self(my_rank, parent_ancestors) {
+        let maxChildRank = my_rank;
         parent_ancestors.forEach(item => this.ancestors.add(item));
         if (this.parent) {
             this.ancestors.add(this.parent);
         }
 
         for (let edge of this.children) {
-            edge.target.rank_self(my_rank + 1, this.ancestors);
+            let cRank = edge.target.rank_self(my_rank + 1, this.ancestors);
+            if (cRank > maxChildRank) maxChildRank = cRank;
         }
+        this.maxdepth = maxChildRank;
 
         this.rank = my_rank;
         this.pos_y = this.rank * RANK_SEPARATION;
         let rl = rank_list(my_rank);
         this.rankorder = rl.length;
         rl.push(this);
+
+        return maxChildRank;
     }
 
     resolve_delta(parent_value) {
@@ -504,7 +510,7 @@ async function _layout(v, distance) {
 
     do_constrained_move(v, wantedMove, false);    
 
-    const rearrangeInners = false;
+    const rearrangeInners = true;
     if (rearrangeInners) {
         let myMid = v.layout_center();
         // the goal here is to let child nodes to the left of us "relax"
@@ -519,7 +525,7 @@ async function _layout(v, distance) {
                 if (maxSlip < 0) maxSlip = 0;
                 let childDesiredMove = maxSlip < stress ? maxSlip : stress;
                 //c.x += maxSlip < stress ? maxSlip : stress;
-                do_constrained_move(c, childDesiredMove);
+                do_constrained_move(c, childDesiredMove, true);
             }
         }
     }
@@ -584,37 +590,10 @@ function search_rank_for_left_edge(root, startNode) {
 function wavefront_subtree_left_edge(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
-
-        const generalSearch = true;
-        if (generalSearch) {
-            let edgeNode = search_rank_left_for_descendant(root, i);
-            if (!edgeNode) continue;
-            edge.push(search_rank_for_left_edge(root, edgeNode));
-        }
-        else {
-            
-            let edgeNode = wave_front(i);
-
-            if (edgeNode == null) {
-                continue;
-            }
-
-            if (!edgeNode.descends_from(root)) {
-                continue;
-            }
-
-            edgeNode.tag3 = true;
-            let nextLeft = rank_left(edgeNode);
-
-            while (nextLeft && nextLeft.descends_from(root)) {
-                nextLeft.tag3 = true;
-                edgeNode = nextLeft;
-                nextLeft = rank_left(edgeNode);
-            }
-
-
-            edge.push(edgeNode);
-        }
+        let edgeNode = search_rank_left_for_descendant(root, i);
+        if (!edgeNode) continue;
+        edge.push(search_rank_for_left_edge(root, edgeNode));
+        
     }
     return edge;
 }
@@ -622,26 +601,9 @@ function wavefront_subtree_left_edge(root) {
 var wavefront_subtree_right_edge = function(root) {
     let edge = new Array();
     for (let i = root.rank + 1; i < _rank_lists.length; i++) {
-        
-        const generalSearch = true;
-        if (generalSearch) {
-            let edgeNode = search_rank_left_for_descendant(root, i);
-            if (!edgeNode) continue;
-            edge.push(edgeNode);
-        }
-        else {
-            let edgeNode = wave_front(i);
-
-            if (edgeNode == null) {
-                continue;
-            }
-
-            if (!edgeNode.descends_from(root)) {
-                continue;
-            }
-
-            edge.push(edgeNode);
-        }
+        let edgeNode = search_rank_left_for_descendant(root, i);
+        if (!edgeNode) continue;
+        edge.push(edgeNode);
     }
     return edge;
 }
@@ -674,11 +636,11 @@ function constrain_by_right_edge(edge_list, amount) {
         console.log("CONSTRAIN RIGHT WITH NEIGHBOR", rightNeighbor.label);
 
         let rightMargin = rightNeighbor.layout_left_side() - W_SEPARATION;
-        let targetX = v.layout_right_side() + amount;
+        let targetRightEdge = v.layout_right_side() + amount;
 
-        let overlap = targetX - rightMargin;
-        
-        if (overlap < 0) {
+        let overlap = targetRightEdge - rightMargin;
+
+        if (overlap > 0) {
             amount -= overlap;
         }
     }
