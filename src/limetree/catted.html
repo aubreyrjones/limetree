@@ -518,7 +518,6 @@ async function _layout(v, distance) {
 
     // stack between and above leaves
     let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
-    console.log(v.child(0).label, v.child(-1).label, v.child(0).layout_left_side(), v.child(-1).layout_right_side(), midpoint, v.boxwidth);
     let natural = midpoint - v.halfw();
     v.x = natural; // set the natural midpoint, but we'll still adjust farther along
     
@@ -538,11 +537,10 @@ async function _layout(v, distance) {
     const rearrangeInners = true;
     if (rearrangeInners) {
         let myMid = v.layout_center();
-        // the goal here is to let child nodes to the left of us "relax"
         for (let e of v.children.slice(0).reverse()) {
             let c = e.target;
             let stress = myMid - c.layout_center();
-            if (stress != 0) {
+            if (stress > 0) {
                 do_constrained_move(c, stress, true);
             }
         }
@@ -554,11 +552,6 @@ async function _layout(v, distance) {
 }
 
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
-    if (v.label == "GEMFW") {
-        console.log("THAT'S THE GUY!", wantedMove);
-    }
-
-    console.log("constrained move", v.label);
     if (wantedMove == 0) { 
         return; 
     }
@@ -567,13 +560,8 @@ function do_constrained_move(v, wantedMove, doRightCheck = true) {
         wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
     }
     else if (doRightCheck && wantedMove > 0) {
-        console.log("doing right check.");
         let rightEdge = wavefront_subtree_right_edge(v);
         wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
-    }
-
-    if (v.label == "GEMFW") {
-        console.log("THAT'S THE GUY! CONSTRAINED", wantedMove);
     }
 
     const deferred = true;
