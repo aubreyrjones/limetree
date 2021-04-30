@@ -1,20 +1,22 @@
 import random
 import json
 
+BAD_WORDS = []
+
 MIN_NAME_LENGTH = 5
-MAX_NAME_LENGTH = 15
-MAX_CHILDREN = 5
+MAX_NAME_LENGTH = 30
+MIN_CHILDREN = 1
+MAX_CHILDREN = 8
 MAX_DEPTH = 10
 
-MAX_NODE_COUNT = 50
+LEAF_PROBABILITY = 0.2
+
+MAX_NODE_COUNT = 150
 cur_node_count = 0
 
 random.seed()
 
 def no_naughty(w):
-    for bad_word in BAD_WORDS:
-        if bad_word in w:
-             return False
     return True
 
 def rand_name():
@@ -33,10 +35,15 @@ def rand_node(depth = 0):
     rval['!id'] = cur_node_count
     cur_node_count += 1
     rval["!label"] = rand_name()
-
-    
-    nchildren = random.randrange(0, MAX_CHILDREN)
     rval["children"] = []
+
+    leaf_prob = (1 - float(depth) / float(MAX_DEPTH))
+
+    if random.random() > leaf_prob:
+        return rval
+    
+    nchildren = random.randrange(1, MAX_CHILDREN)
+    
     for i in range(nchildren):
         c = rand_node(depth + 1)
         if not c: return rval
