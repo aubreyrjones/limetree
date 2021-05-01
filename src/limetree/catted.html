@@ -262,6 +262,34 @@ class LiveNode {
         this.sib_index = -1;
         this.delta = 0.0;
         this.childIdeals = new Array();
+        this.leftEdgeByRank = new Array(); // int -> RANK ORDER
+        this.rightEdgeByRank = new Array(); // int -> RANK ORDER
+    }
+
+    rank_left_edge(rank) {
+        if (rank < this.rank || rank > this.maxdepth) {return -1;}
+        return this.leftEdgeByRank[rank - this.rank];
+    }
+
+    rank_right_edge(rank) {
+        if (rank < this.rank || rank > this.maxdepth) {return -1;}
+        return this.rightEdgeByRank[rank - this.rank];
+    }
+
+    subtree_left_edge() {
+        let rval = new Array();
+        for (let i = 0; i < this.leftEdgeByRank.length; i++) {
+            rval.push(rank_list(this.rank + i)[this.leftEdgeByRank[i]]);
+        }
+        return rval;
+    }
+
+    subtree_right_edge() {
+        let rval = new Array();
+        for (let i = 0; i < this.rightEdgeByRank.length; i++) {
+            rval.push(rank_list(this.rank + i)[this.rightEdgeByRank[i]]);
+        }
+        return rval;
     }
 
     add_child(edge_name, c) {
@@ -292,13 +320,41 @@ class LiveNode {
         }
     }
 
+    // collect the children's idea of subtree extrema
+    sigma(rank) {
+        let rval = {
+            'l' : -1,
+            'r' : -1
+        };
+
+        for (let e of this.children) {
+            let cExtreme = e.target.rank_left_edge(rank);
+            if (cExtreme >= 0) {
+                rval['l'] = cExtreme;
+                break;
+            }
+        }
+
+        for (let e of Array.from(this.children).reverse()) {
+            let cExtreme = e.target.rank_right_edge(rank);
+            if (cExtreme >= 0) {
+                rval['r'] = cExtreme;
+                break;
+            }
+        }
+
+        return rval;
+    }
+
     rank_self(my_rank, parent_ancestors) {
-        let maxChildRank = my_rank;
+        // set up ancestry query set.
         parent_ancestors.forEach(item => this.ancestors.add(item));
         if (this.parent) {
             this.ancestors.add(this.parent);
         }
 
+        // rank children and collect their maximum depth
+        let maxChildRank = my_rank;
         for (let edge of this.children) {
             let cRank = edge.target.rank_self(my_rank + 1, this.ancestors);
             if (cRank > maxChildRank) {
@@ -307,11 +363,33 @@ class LiveNode {
         }
         this.maxdepth = maxChildRank;
 
+        // attach to rank structure
         this.rank = my_rank;
-        this.pos_y = this.rank * RANK_SEPARATION;
         let rl = rank_list(my_rank);
         this.rankorder = rl.length;
         rl.push(this);
+
+
+        // subtree extrema
+        this.leftEdgeByRank = new Array();
+        this.rightEdgeByRank = new Array();
+        this.leftEdgeByRank.push(this.rankorder); // our own level.
+        this.rightEdgeByRank.push(this.rankorder);
+
+        if (!this.leaf()) {
+            console.log(this.label);
+            let depthCount = this.maxdepth - this.rank; // must be non-zero for non-leaf
+            for (let i = 0; i < depthCount; i++) {
+                let r = i + this.rank + 1;
+                let edges = this.sigma(r);
+                console.log("edges", this.maxdepth, depthCount, r, edges['l'], edges['r']);
+                this.leftEdgeByRank.push(edges['l']);
+                this.rightEdgeByRank.push(edges['r']);
+            }
+        }
+
+        // visual layout
+        this.pos_y = this.rank * RANK_SEPARATION;
 
         return this.maxdepth;
     }
@@ -566,15 +644,31 @@ async function _layout(v, distance) {
 }
 
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
+    const nodeLocalEdgeLists = true;
+
     if (wantedMove == 0) { 
         return; 
     }
     else if (wantedMove < 0) { // we're moving left
-        let leftEdge = wavefront_subtree_left_edge(v);
+        let leftEdge;
+        if (nodeLocalEdgeLists) {
+            v.tag3 = true;
+            leftEdge = v.subtree_left_edge();
+        } 
+        else { 
+            leftEdge = wavefront_subtree_left_edge(v) 
+        };
         wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
     }
     else if (doRightCheck && wantedMove > 0) {
-        let rightEdge = wavefront_subtree_right_edge(v);
+        let rightEdge;
+        if (nodeLocalEdgeLists) {
+            v.tag3 = true;
+            rightEdge = v.subtree_right_edge();
+        }
+        else {
+            rightEdge = wavefront_subtree_right_edge(v);;
+        }
         wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
     }
 
