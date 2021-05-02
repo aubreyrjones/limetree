@@ -45,7 +45,7 @@
  * 
 */
 
-var DEFERRED_MOVE_MODE = false;
+var DEFERRED_MOVE_MODE = true;
 
 
 function sleep(ms) {
@@ -192,10 +192,20 @@ class LiveNode {
         this.pos_y = RANK_SEPARATION * this.rank;
         this.boxwidth = 100;
         this.style = "default";
+        this.highlight = false;
+
+        // tree debugging tags and whatnot.
         this.tag = false;
         this.tag2 = false;
         this.tag3 = false;
         this.tag4 = false;
+        this.tag_common = 0;
+        this.last_common = -1;
+        this.moveCount = 0;
+        this.lastMoveStep = -1;
+        this.placedStep = -1;
+
+        
 
         // get the id
         if ("!id" in o) {
@@ -393,6 +403,18 @@ class LiveNode {
         return this.maxdepth;
     }
 
+    highlight_edges(v1, v2) {
+        if (!v2) v2 = v1;
+
+        for (let n of this.subtree_left_edge()) {
+            n.highlight = v1;
+        }
+
+        for (let n of this.subtree_right_edge()) {
+            n.highlight = v2;
+        }
+    }
+
     resolve_delta(parent_value) {
         this.x += this.delta + parent_value;
         for (let edge of this.children) {
@@ -424,7 +446,6 @@ class LiveNode {
     }
 
     descends_from(v) {
-        whatthefuck();
         return this.ancestors.has(v);
     }
 
@@ -524,6 +545,7 @@ class LiveNode {
         const tagged2 = this.tag2;
         const tagged3 = this.tag3;
         const tagged4 = this.tag4;
+        const tagged_common = this.tag_common;
 
         ctx.lineWidth = 1;
 
@@ -548,7 +570,7 @@ class LiveNode {
             ctx.stroke();
         }
 
-        if (tagged || tagged2 || tagged3 || tagged4) {
+        if (false && (tagged || tagged2 || tagged3 || tagged4 || tagged_common)) {
             ctx.lineWidth = 4;
             if (tagged) {
                 ctx.strokeStyle = "red";
@@ -557,22 +579,45 @@ class LiveNode {
             if (tagged2) {
                 ctx.strokeStyle = "blue";
                 ctx.strokeRect(this.pos_x - 8, this.top() - 8, this.boxwidth + 16, BOX_HEIGHT + 16);
-            }
-            if (tagged3) {
-                ctx.strokeStyle = "green";
-                ctx.strokeRect(this.pos_x - 12, this.top() - 12, this.boxwidth + 24, BOX_HEIGHT + 24);
-            }
-            if (tagged4) {
-                ctx.strokeStyle = "orange";
-                ctx.strokeRect(this.pos_x - 12, this.top() - 12, this.boxwidth + 24, BOX_HEIGHT + 24);
-            }
+            }    
+        }
+
+        if (tagged_common) {
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = "orange";
+            ctx.strokeRect(this.pos_x - 16, this.top() - 16, this.boxwidth + 32, BOX_HEIGHT + 32);
+        }
+
+        if (this.last_common > 0) {
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = "blue";
+            ctx.strokeRect(this.pos_x - 12, this.top() - 12, this.boxwidth + 24, BOX_HEIGHT + 24);
         }
         
         ctx.lineWidth = 1;
         ctx.strokeStyle = style.outline;
         ctx.fillStyle = style.fillStyle;
         ctx.fillRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
-        ctx.strokeRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
+        if (false && DEFERRED_MOVE_MODE && this.moveCount != 0) {
+            ctx.lineWidth = 4;
+            if (this.moveCount == 1) {
+                ctx.strokeStyle = 'green';
+            }
+            else if (this.moveCount == 2) {
+                ctx.strokeStyle = 'blue';
+            }
+            else {
+                ctx.strokeStyle = 'red';
+            }
+            ctx.strokeRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
+        }
+        else {
+            if (this.highlight) {
+                ctx.strokeStyle = this.highlight;
+                ctx.lineWidth = 6;
+            }
+            ctx.strokeRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
+        }
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
 
@@ -580,7 +625,35 @@ class LiveNode {
         this.tag2 = false;
         this.tag3 = false;
         this.tag4 = false;
+
+        if (!finishedLayout) {
+            this.highlight = false;
+        }
     }
+}
+
+function find_common(a, b) {
+    if (a === b) return b;
+    if (a.parent === b.parent) return a.parent; // could be null if we passed in some root nodes, I guess?
+
+    let ap = a.parent, bp = b.parent;
+
+    while (ap.rank > bp.rank) {
+        ap = ap.parent;
+        if (ap.parent === bp) return bp;
+    }
+
+    while (bp.rank > ap.rank) {
+        bp = bp.parent;
+        if (bp.parent === ap) return ap;
+    }
+
+    while (ap != bp) {
+        ap = ap.parent;
+        bp = bp.parent;
+    }
+
+    return ap;
 }
 
 var least = function(a, b) {
@@ -595,17 +668,21 @@ var greatest = function(a, b) {
 
 async function _layout(v, distance) {
     LAYOUT_RECURSION_COUNTER++;
+    v.placedStep = LAYOUT_RECURSION_COUNTER;
 
     if (v.rankorder > 0) {
         v.x = rank_left(v).layout_right_side() + distance;
+        let common = find_common(v, rank_left(v));
+        common.tag_common++;
+        //common.last_common = LAYOUT_RECURSION_COUNTER;
     }
     else {
         v.x = 0.0;
     }
 
+    await debug_step(); // DEBUG
     if (v.leaf()) {
         mark_wave(v);
-        await debug_step(); // DEBUG
         return;
     }
     
@@ -634,6 +711,8 @@ async function _layout(v, distance) {
 
     do_constrained_move(v, wantedMove, false);
 
+    v.tag_common = 0; // reset the counter now that we're "in place".
+
     const rearrangeInners = true;
     if (rearrangeInners) {
         //let myMid = v.layout_center();
@@ -646,6 +725,18 @@ async function _layout(v, distance) {
         }
     }
 
+    if (v.tag_common > 0) {
+        console.log(v.label, v.tag_common);
+    }
+
+    // if ('already_placed' in v.payload) {
+    //     whatthefuck();
+    // }
+    // else {
+    //     v.tag_common = 0; // reset the counter now that we're "in place".
+    //     v.payload['already_placed'] = true;
+    // }
+
     mark_wave(v);
     await debug_step(); // DEBUG
     return v;
@@ -653,6 +744,8 @@ async function _layout(v, distance) {
 
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
     const nodeLocalEdgeLists = true;
+
+    v.highlight_edges("orange");
 
     if (wantedMove == 0) { 
         return; 
@@ -739,10 +832,19 @@ var wavefront_subtree_right_edge = function(root) {
 }
 
 function constrain_by_left_edge(edge_list, amount) {
+    let commons = new Set();
+
     for (let v of edge_list) {
 
         if (v.rankorder == 0) {
             continue;
+        }
+
+        let common = find_common(v, rank_left(v));
+        if (!commons.has(common)) {
+            common.tag_common++;
+            common.last_common = LAYOUT_RECURSION_COUNTER;
+            commons.add(common);
         }
 
         let leftmargin = rank_left(v).layout_right_side() + W_SEPARATION;
@@ -755,13 +857,26 @@ function constrain_by_left_edge(edge_list, amount) {
             amount -= overlap;
         }
     }
+
+    commons.forEach( n => n.highlight_edges("red"));
+
+    console.log("commons", commons.size);
     return amount;
 }
 
 function constrain_by_right_edge(edge_list, amount) {
+    let commons = new Set();
+
     for (let v of edge_list) {
         let rightNeighbor = rank_right(v);
         if (!rightNeighbor) continue;
+
+        let common = find_common(v, rightNeighbor);
+        if (!commons.has(common)) {
+            common.tag_common++;
+            common.last_common = LAYOUT_RECURSION_COUNTER;
+            commons.add(common);
+        }
 
         let rightMargin = rightNeighbor.layout_left_side() - W_SEPARATION;
         let targetRightEdge = v.layout_right_side() + amount;
@@ -777,15 +892,18 @@ function constrain_by_right_edge(edge_list, amount) {
 
 
 var move_tree_deferred = function(root, amount) {
-    //console.log("deferred move.");
-    MOVE_COUNTER++;
     root.delta += amount;
+
+    MOVE_COUNTER++;
+    root.moveCount++;
+    root.lastMoveStep = LAYOUT_RECURSION_COUNTER;
 }
 
 var move_tree = function(v, amount) {
-    //console.log("Moving subtree.");
     MOVE_COUNTER++;
     v.tag4 = true;
+    root.lastMoveStep = LAYOUT_RECURSION_COUNTER;
+
     v.x += amount;
     for (let edge of v.children) {
         move_tree(edge.target, amount);
@@ -922,23 +1040,35 @@ var layout_obj = function(parent_div, name, o, extra) {
 
 var set_node_data = function(n) {
     if (n == _displayed_node) return;
+
+    if (_displayed_node) {
+        _displayed_node.highlight_edges(false);
+    }
+
     _displayed_node = n;
+    _displayed_node.highlight_edges("orange", "cyan");
+    if (finishedLayout) {
+        draw_all_configured();
+    }
 
     let info_div = document.getElementById("node_info");
     info_div.innerText = "";
     let extra = {
         "delta" : n.delta, 
         "deltasum" : n.non_tagging_delta_sum(), 
-        "id" : n.id, 
-        "x" : n.x, 
-        "redge" : n.layout_natural_right(), 
+        "id" : n.id,
+        "node moves" : n.moveCount,
+        "placed at" : n.placedStep,
+        "last move" : n.lastMoveStep,
+        "last common" : n.last_common,
+        "common count" : n.tag_common,
         "depth" : n.maxdepth, 
         "n nodes" : Object.keys(_all_nodes).length,
         "layout count" : LAYOUT_RECURSION_COUNTER,
         "sum count" : DELTA_SUM_COUNTER,
         "left count" : LEFT_SIDE_COUNTER,
         "right count" : RIGHT_SIDE_COUNTER,
-        "moves" : MOVE_COUNTER
+        "total moves" : MOVE_COUNTER
     };
     layout_obj(info_div, n.label || n.id, n.payload, extra);
 }
