@@ -46,7 +46,10 @@
 */
 
 var DEFERRED_MOVE_MODE = true;
-var PROFILE_COLLISION_MODE = true;
+
+var PROFILE_COLLISION_MODE = false;
+
+var MOVE_INNER_MODE = true;
 
 
 function sleep(ms) {
@@ -904,10 +907,15 @@ async function _layout(v, distance) {
     v.set_right_profile(v.rank, v.x + v.boxwidth);
     
     let lefthandMargin = 0;
-    let lefthand = rank_profile_left(v);
+    let lefthand = PROFILE_COLLISION_MODE ? rank_profile_left(v) : rank_left(v);
     
     if (lefthand) {
-        lefthandMargin = lefthand.right_profile_xformed(v.rank) + distance;
+        if (PROFILE_COLLISION_MODE) {
+            lefthandMargin = lefthand.right_profile_xformed(v.rank) + distance;
+        }
+        else {
+            lefthandMargin = lefthand.layout_right_side() + distance;
+        }
     }
 
     let wantedMove = lefthandMargin - natural;
@@ -916,11 +924,11 @@ async function _layout(v, distance) {
 
     do_constrained_move(v, wantedMove, false);
 
-    const rearrangeInners = false;
-    if (rearrangeInners) {
+    if (MOVE_INNER_MODE) {
         for (let e of v.children.slice(0).reverse()) {
             let c = e.target;
-            let stress = v.layout_left_side() + v.childIdeals[c.sib_index] - c.layout_left_side();
+            //let stress = v.layout_left_side() + v.childIdeals[c.sib_index] - c.layout_left_side();
+            let stress = v.childIdeals[c.sib_index] - c.x - c.delta;
             if (stress > 0) {
                 do_constrained_move(c, stress, true);
             }
@@ -950,7 +958,6 @@ function constrain_by_left_profile(v, wantedMove) {
         leftProfileRoot.tag = 5;
 
         let leftmargin = leftProfileRoot.right_profile_xformed(v.rank + i) + W_SEPARATION;
-        //let targetX = leftEdge[i].layout_left_side() + wantedMove;
         let targetX = v.left_profile_for_rank(v.rank + i) + wantedMove;
 
         let overlap = targetX - leftmargin;
@@ -976,7 +983,6 @@ function constrain_by_right_profile(v, wantedMove) {
         rightProfileRoot.tag = 5;
 
         let rightMargin = rightProfileRoot.left_profile_xformed(v.rank + i) - W_SEPARATION;
-        //let targetRightEdge = rightEdge[i].layout_right_side() + wantedMove;
         let targetRightEdge = v.right_profile_for_rank(v.rank + i) + wantedMove;
 
         let overlap = targetRightEdge - rightMargin;
