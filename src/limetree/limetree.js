@@ -47,9 +47,9 @@
 
 var DEFERRED_MOVE_MODE = true;
 
-var PROFILE_COLLISION_MODE = false;
+var PROFILE_COLLISION_MODE = true;
 
-var MOVE_INNER_MODE = true;
+var MOVE_INNER_MODE = false;
 
 
 function sleep(ms) {
@@ -58,7 +58,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(80);
+    return sleep(10);
 }
 
 var finishedLayout = false;
@@ -928,7 +928,7 @@ async function _layout(v, distance) {
         for (let e of v.children.slice(0).reverse()) {
             let c = e.target;
             //let stress = v.layout_left_side() + v.childIdeals[c.sib_index] - c.layout_left_side();
-            let stress = v.childIdeals[c.sib_index] - c.x - c.delta;
+            let stress = v.x - v.delta + v.childIdeals[c.sib_index] - c.x - c.delta;
             if (stress > 0) {
                 do_constrained_move(c, stress, true);
             }
@@ -973,6 +973,8 @@ function constrain_by_left_profile(v, wantedMove) {
 function constrain_by_right_profile(v, wantedMove) {
     let rightEdge = v.subtree_right_edge();
 
+    console.log("wanted", wantedMove);
+
     for (let i = 0; i < rightEdge.length; i++) {
         let rightProfileRoot = rank_profile_right(rightEdge[i]);
         if (!rightProfileRoot) {
@@ -983,7 +985,7 @@ function constrain_by_right_profile(v, wantedMove) {
         rightProfileRoot.tag = 5;
 
         let rightMargin = rightProfileRoot.left_profile_xformed(v.rank + i) - W_SEPARATION;
-        let targetRightEdge = v.right_profile_for_rank(v.rank + i) + wantedMove;
+        let targetRightEdge = v.right_profile_xformed(v.rank + i) + wantedMove;
 
         let overlap = targetRightEdge - rightMargin;
 
@@ -992,6 +994,7 @@ function constrain_by_right_profile(v, wantedMove) {
         }
     }
 
+    console.log("got", wantedMove);
     return wantedMove;
 }
 
@@ -1172,7 +1175,7 @@ var move_tree_deferred = function(root, amount) {
 var move_tree = function(v, amount) {
     MOVE_COUNTER++;
     v.tag4 = true;
-    root.lastMoveStep = LAYOUT_RECURSION_COUNTER;
+    v.lastMoveStep = LAYOUT_RECURSION_COUNTER;
 
     v.x += amount;
     for (let edge of v.children) {
