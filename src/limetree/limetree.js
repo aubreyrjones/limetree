@@ -54,7 +54,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(100);
+    return sleep(250);
 }
 
 var finishedLayout = false;
@@ -78,6 +78,31 @@ var _all_nodes = {};
 var _root_node = null;
 var _rank_lists = new Array();
 var _rank_wave = new Array();
+
+// holds which profile owns each rank at each time.
+var _rank_profile_table = new Array();
+
+function rank_profile_row(rank) {
+    let slen = _rank_profile_table.length;
+    for (let i = 0; i <= (rank - slen); i++) {
+        _rank_profile_table.push(new Array());
+    }
+    return _rank_profile_table[rank];
+}
+
+function rank_profile_left(v) {
+    if (v.rankorder <= 0) return null;
+    return rank_profile_row(v.rank)[v.rankorder - 1];
+}
+
+function rank_profile_right(v) {
+    let row = rank_profile_row(v.rank);
+    if (v.rankorder + 1 >= row.length) return null;
+    return row[v.rankorder + 1];
+}
+
+
+
 
 var rank_list = function (rank) {
     let slen = _rank_lists.length;
@@ -204,6 +229,7 @@ class LiveNode {
         this.moveCount = 0;
         this.lastMoveStep = -1;
         this.placedStep = -1;
+        this.tag_profile = false;
 
         
 
@@ -384,6 +410,7 @@ class LiveNode {
         let rl = rank_list(my_rank);
         this.rankorder = rl.length;
         rl.push(this);
+        rank_profile_row(this.rank).push(null); // just for book keeping for now.
 
 
         // subtree extrema
@@ -412,6 +439,16 @@ class LiveNode {
         this.pos_y = this.rank * RANK_SEPARATION;
 
         return this.maxdepth;
+    }
+
+    dominate_rank_profile() {
+        for (let edgeNode of this.subtree_left_edge()) {
+            rank_profile_row(edgeNode.rank)[edgeNode.rankorder] = this;
+        }
+
+        for (let edgeNode of this.subtree_right_edge()) {
+            rank_profile_row(edgeNode.rank)[edgeNode.rankorder] = this;
+        }
     }
 
     right_profile_for_rank(rank) {
@@ -618,16 +655,20 @@ class LiveNode {
             ctx.stroke();
         }
 
-        if (false && (tagged || tagged2 || tagged3 || tagged4 || tagged_common)) {
+        if ((tagged || tagged2 || tagged3 || tagged4 || tagged_common)) {
             ctx.lineWidth = 4;
-            if (tagged) {
-                ctx.strokeStyle = "red";
-                ctx.strokeRect(this.pos_x - 4, this.top() - 4, this.boxwidth + 8, BOX_HEIGHT + 8);
-            }
-            if (tagged2) {
+            // if (tagged) {
+            //     ctx.strokeStyle = "red";
+            //     ctx.strokeRect(this.pos_x - 4, this.top() - 4, this.boxwidth + 8, BOX_HEIGHT + 8);
+            // }
+            // if (tagged2) {
+            //     ctx.strokeStyle = "blue";
+            //     ctx.strokeRect(this.pos_x - 8, this.top() - 8, this.boxwidth + 16, BOX_HEIGHT + 16);
+            // }
+            if (tagged3) {
                 ctx.strokeStyle = "blue";
                 ctx.strokeRect(this.pos_x - 8, this.top() - 8, this.boxwidth + 16, BOX_HEIGHT + 16);
-            }    
+            }
         }
 
         if (tagged_common) {
@@ -677,11 +718,16 @@ class LiveNode {
 
         this.tag = false;
         this.tag2 = false;
-        this.tag3 = false;
+        if (this.tag3) this.tag3--;
         this.tag4 = false;
 
         if (!finishedLayout) {
             this.highlight = false;
+        }
+
+        if (this.tag_profile) {
+            draw_node_profile(ctx, this);
+            this.tag_profile--;
         }
     }
 }
@@ -689,7 +735,7 @@ class LiveNode {
 function draw_node_profile(ctx, n) {
     for (let rank = n.rank; rank <= n.maxdepth; rank++) {
         ctx.strokeStyle = 'orange';
-        ctx.lineWidth = 6;
+        ctx.lineWidth = 16;
 
         let rightProfile = n.right_profile_for_rank(rank);
         if (rightProfile == null) {
@@ -768,6 +814,7 @@ async function _layout(v, distance) {
 
     v.set_left_profile(v.rank, v.x);
     v.set_right_profile(v.rank, v.x + v.boxwidth);
+    v.dominate_rank_profile();
 
     await debug_step(); // DEBUG
     
@@ -845,7 +892,6 @@ async function _layout(v, distance) {
         console.log(v.label, v.tag_common);
     }
 
-
     mark_wave(v);
     await debug_step(); // DEBUG
     return v;
@@ -854,15 +900,21 @@ async function _layout(v, distance) {
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
     const nodeLocalEdgeLists = true;
 
-    v.highlight_edges("cyan");
+    //v.highlight_edges("cyan");
+    
 
     if (wantedMove == 0) { 
         return 0; 
     }
     else if (wantedMove < 0) { // we're moving left
+        let leftProfile = rank_profile_left(v);
+        if (leftProfile) {
+             leftProfile.tag_profile = 3;
+             v.tag3 = 3;
+        }
+
         let leftEdge;
         if (nodeLocalEdgeLists) {
-            v.tag3 = true;
             leftEdge = v.subtree_left_edge();
         } 
         else { 
@@ -873,7 +925,6 @@ function do_constrained_move(v, wantedMove, doRightCheck = true) {
     else if (doRightCheck && wantedMove > 0) {
         let rightEdge;
         if (nodeLocalEdgeLists) {
-            v.tag3 = true;
             rightEdge = v.subtree_right_edge();
         }
         else {
@@ -971,7 +1022,7 @@ function constrain_by_left_edge(edge_list, amount) {
         }
     }
 
-    commons.forEach( n => n.highlight_edges("red"));
+    //commons.forEach( n => n.highlight_edges("red"));
 
     console.log("commons", commons.size);
     return amount;
