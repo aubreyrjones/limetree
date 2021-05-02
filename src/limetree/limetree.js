@@ -46,6 +46,7 @@
 */
 
 var DEFERRED_MOVE_MODE = true;
+var PROFILE_COLLISION_MODE = true;
 
 
 function sleep(ms) {
@@ -54,7 +55,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(250);
+    return sleep(80);
 }
 
 var finishedLayout = false;
@@ -304,8 +305,6 @@ class LiveNode {
 
         this.rightProfile = new Array();
         this.leftProfile = new Array();
-
-        this.payload['lefts'] = this.leftProfile;
     }
 
     rank_left_edge(rank) {
@@ -441,6 +440,11 @@ class LiveNode {
         return this.maxdepth;
     }
 
+    claim_own_profile() {
+        rank_profile_row(this.rank)[this.rankorder] = this;
+    }
+
+    // set pointers
     dominate_rank_profile() {
         for (let edgeNode of this.subtree_left_edge()) {
             rank_profile_row(edgeNode.rank)[edgeNode.rankorder] = this;
@@ -451,33 +455,54 @@ class LiveNode {
         }
     }
 
+    // actual numerical profile
     right_profile_for_rank(rank) {
         if (rank < this.rank || rank > this.maxdepth) return null;
         return this.rightProfile[rank - this.rank];
     }
 
+    right_profile_xformed(rank) {
+        console.log("RIGHT PROFILE USED.");
+        let natural = this.right_profile_for_rank(rank);
+        if (natural == null) return null;
+        return natural + this.delta_sum();
+    }
+
+    // actual numerical profile
     set_right_profile(rank, value) {
         this.rightProfile[rank - this.rank] = value;
     }
 
+    // actual numerical profile
     move_right_profile(rank, delta) {
         this.rightProfile[rank - this.rank] += delta;
     }
 
 
+    // actual numerical profile
     left_profile_for_rank(rank) {
         if (rank < this.rank || rank > this.maxdepth) return null;
         return this.leftProfile[rank - this.rank];
     }
 
+    left_profile_xformed(rank) {
+        console.log("LEFT PROFILE USED.");
+        let natural = this.left_profile_for_rank(rank);
+        if (natural == null) return null;
+        return natural + this.delta_sum();
+    }
+
+    // actual numerical profile
     set_left_profile(rank, value) {
         this.leftProfile[rank - this.rank] = value;
     }
 
+    // actual numerical profile
     move_left_profile(rank, delta) {
         this.leftProfile[rank - this.rank] += delta;
     }
 
+    // actual numerical profile
     move_whole_profile(delta) {
         for (let i = 0; i < this.rightProfile.length; i++) {
             this.rightProfile[i] += delta;
@@ -803,7 +828,12 @@ async function _layout(v, distance) {
     v.placedStep = LAYOUT_RECURSION_COUNTER;
 
     if (v.rankorder > 0) {
-        v.x = rank_left(v).layout_right_side() + distance;
+        if (PROFILE_COLLISION_MODE) {
+            v.x = rank_profile_left(v).right_profile_xformed(v.rank) + distance;
+        }
+        else {
+            v.x = rank_left(v).layout_right_side() + distance;
+        }
         let common = find_common(v, rank_left(v));
         common.tag_common++;
         //common.last_common = LAYOUT_RECURSION_COUNTER;
@@ -814,7 +844,7 @@ async function _layout(v, distance) {
 
     v.set_left_profile(v.rank, v.x);
     v.set_right_profile(v.rank, v.x + v.boxwidth);
-    v.dominate_rank_profile();
+    v.claim_own_profile();
 
     await debug_step(); // DEBUG
     
@@ -886,15 +916,39 @@ async function _layout(v, distance) {
         }
     }
 
-    v.tag_common = 0; // reset the counter now that we're "in place".
-
-    if (v.tag_common > 0) {
-        console.log(v.label, v.tag_common);
-    }
+    v.dominate_rank_profile();
+    //v.tag_common = 0; // reset the counter now that we're "in place".
 
     mark_wave(v);
     await debug_step(); // DEBUG
     return v;
+}
+
+function constrain_by_left_profile(v, wantedMove) {
+    if (wantedMove == 0) return 0;
+
+    let leftProfileRoot = rank_profile_left(v);
+    if (!leftProfileRoot) {
+        console.log("no left root.");
+        return wantedMove;
+    }
+
+    leftProfileRoot.tag = 3;
+
+    let leftEdge = v.subtree_left_edge();
+
+    for (let i = 0; i < leftEdge.length; i++) {
+        let leftmargin = leftProfileRoot.right_profile_xformed(v.rank + 1 + i) + W_SEPARATION;
+        let targetX = leftEdge[i].layout_left_side(i) + wantedMove;
+            
+        let overlap = targetX - leftmargin;
+            
+        if (overlap < 0) {
+            wantedMove -= overlap;
+        }
+    }
+
+    return wantedMove;
 }
 
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
@@ -913,14 +967,19 @@ function do_constrained_move(v, wantedMove, doRightCheck = true) {
              v.tag3 = 3;
         }
 
-        let leftEdge;
-        if (nodeLocalEdgeLists) {
-            leftEdge = v.subtree_left_edge();
-        } 
-        else { 
-            leftEdge = wavefront_subtree_left_edge(v) 
-        };
-        wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
+        if (PROFILE_COLLISION_MODE) {
+            wantedMove = constrain_by_left_profile(v, wantedMove);
+        }
+        else {
+            let leftEdge;
+            if (nodeLocalEdgeLists) {
+                leftEdge = v.subtree_left_edge();
+            } 
+            else { 
+                leftEdge = wavefront_subtree_left_edge(v) 
+            };
+            wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
+        }
     }
     else if (doRightCheck && wantedMove > 0) {
         let rightEdge;
@@ -1024,7 +1083,6 @@ function constrain_by_left_edge(edge_list, amount) {
 
     //commons.forEach( n => n.highlight_edges("red"));
 
-    console.log("commons", commons.size);
     return amount;
 }
 
