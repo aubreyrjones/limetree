@@ -49,7 +49,7 @@ var DEFERRED_MOVE_MODE = true;
 
 var PROFILE_COLLISION_MODE = true;
 
-var MOVE_INNER_MODE = false;
+var MOVE_INNER_MODE = true;
 
 
 function sleep(ms) {
@@ -469,7 +469,14 @@ class LiveNode {
         console.log("RIGHT PROFILE USED.");
         let natural = this.right_profile_for_rank(rank);
         if (natural == null) return null;
-        return natural + this.delta_sum();
+
+        let sum = 0;// this.delta_sum();
+
+        // if (sum == 0) {
+        //     console.log("Delta sum was zero on right query!");
+        // }
+
+        return natural + sum;
     }
 
     // actual numerical profile
@@ -493,7 +500,14 @@ class LiveNode {
         console.log("LEFT PROFILE USED.");
         let natural = this.left_profile_for_rank(rank);
         if (natural == null) return null;
-        return natural + this.delta_sum();
+
+        let sum = 0; //this.delta_sum();
+
+        // if (sum == 0) {
+        //     console.log("Delta sum was zero on right query!");
+        // }
+
+        return natural + sum;
     }
 
     // actual numerical profile
