@@ -73,6 +73,7 @@ var DELTA_SUM_COUNTER = 0;
 var LEFT_SIDE_COUNTER = 0;
 var RIGHT_SIDE_COUNTER = 0;
 var MOVE_COUNTER = 0;
+var PROFILE_UPDATES = 0;
 
 var _next_node_id = 999;
 var _all_nodes = {};
@@ -681,21 +682,27 @@ class LiveNode {
         }
 
         if ((tagged || tagged2 || tagged3 || tagged4 || tagged_common)) {
-            ctx.lineWidth = 4;
-            // if (tagged) {
-            //     ctx.strokeStyle = "red";
-            //     ctx.strokeRect(this.pos_x - 4, this.top() - 4, this.boxwidth + 8, BOX_HEIGHT + 8);
-            // }
+            
+
             // if (tagged2) {
             //     ctx.strokeStyle = "blue";
             //     ctx.strokeRect(this.pos_x - 8, this.top() - 8, this.boxwidth + 16, BOX_HEIGHT + 16);
             // }
-            if (tagged3) {
-                ctx.strokeStyle = "blue";
-                ctx.strokeRect(this.pos_x - 8, this.top() - 8, this.boxwidth + 16, BOX_HEIGHT + 16);
-            }
+            
         }
 
+        if (tagged) {
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = "red";
+            ctx.strokeRect(this.pos_x - 4, this.top() - 4, this.boxwidth + 8, BOX_HEIGHT + 8);
+        }
+
+        if (tagged3) {
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = "blue";
+            ctx.strokeRect(this.pos_x - 4, this.top() - 4, this.boxwidth + 8, BOX_HEIGHT + 8);
+        }
+        
         if (tagged_common) {
             if (this.non_tagging_delta_sum() == 0) {
                 ctx.setLineDash([5, 5]);
@@ -741,7 +748,7 @@ class LiveNode {
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
 
-        this.tag = false;
+        if (this.tag) this.tag--;
         this.tag2 = false;
         if (this.tag3) this.tag3--;
         this.tag4 = false;
@@ -823,6 +830,33 @@ var greatest = function(a, b) {
     return b;
 }
 
+function copy_subtree_profile(v) {
+    let leftChild = v.child(0);
+    v.set_left_profile(v.rank + 1, leftChild.left_profile_for_rank(v.rank + 1) + leftChild.delta);
+
+    let rightChild = v.child(-1);
+    v.set_right_profile(v.rank + 1, rightChild.right_profile_for_rank(v.rank + 1) + rightChild.delta);
+
+    for (let i = v.rank + 2; i <= v.maxdepth; i++) { // not my rank, and not my children's rank either
+        PROFILE_UPDATES++;
+        for (let e of Array.from(v.children).reverse()) {
+            let c = e.target;
+            let childProfile = c.right_profile_for_rank(i);
+            if (childProfile == null) continue;
+            v.set_right_profile(i, childProfile + c.delta);
+            break;
+        }
+
+        for (let e of v.children) {
+            let c = e.target;
+            let childProfile = c.left_profile_for_rank(i);
+            if (childProfile == null) continue;
+            v.set_left_profile(i, childProfile + c.delta);
+            break;
+        }
+    }
+}
+
 async function _layout(v, distance) {
     LAYOUT_RECURSION_COUNTER++;
     v.placedStep = LAYOUT_RECURSION_COUNTER;
@@ -862,7 +896,7 @@ async function _layout(v, distance) {
     }
 
     // stack between and above leaves
-    let midpoint = (v.child(0).layout_left_side() + v.child(-1).layout_right_side()) / 2.0;
+    let midpoint = (v.child(0).x + v.child(-1).layout_natural_right()) / 2.0;
     let natural = midpoint - v.halfw();
     v.x = natural; // set the natural midpoint, but we'll still adjust farther along
     
@@ -870,19 +904,20 @@ async function _layout(v, distance) {
     v.set_right_profile(v.rank, v.x + v.boxwidth);
     
     let lefthandMargin = 0;
-    let lefthand = rank_left(v);
+    let lefthand = rank_profile_left(v);
     
     if (lefthand) {
-        lefthandMargin = lefthand.layout_right_side() + distance;
+        lefthandMargin = lefthand.right_profile_xformed(v.rank) + distance;
     }
 
     let wantedMove = lefthandMargin - natural;
 
+    copy_subtree_profile(v);
+
     do_constrained_move(v, wantedMove, false);
 
-    const rearrangeInners = true;
+    const rearrangeInners = false;
     if (rearrangeInners) {
-        //let myMid = v.layout_center();
         for (let e of v.children.slice(0).reverse()) {
             let c = e.target;
             let stress = v.layout_left_side() + v.childIdeals[c.sib_index] - c.layout_left_side();
@@ -892,29 +927,7 @@ async function _layout(v, distance) {
         }
     }
 
-    let leftChild = v.child(0);
-    v.set_left_profile(v.rank + 1, leftChild.left_profile_for_rank(v.rank + 1) + leftChild.delta);
-
-    let rightChild = v.child(-1);
-    v.set_right_profile(v.rank + 1, rightChild.right_profile_for_rank(v.rank + 1) + rightChild.delta);
-
-    for (let i = v.rank + 2; i <= v.maxdepth; i++) { // not my rank, and not my children's rank either
-        for (let e of Array.from(v.children).reverse()) {
-            let c = e.target;
-            let childProfile = c.right_profile_for_rank(i);
-            if (childProfile == null) continue;
-            v.set_right_profile(i, childProfile + c.delta);
-            break;
-        }
-
-        for (let e of v.children) {
-            let c = e.target;
-            let childProfile = c.left_profile_for_rank(i);
-            if (childProfile == null) continue;
-            v.set_left_profile(i, childProfile + c.delta);
-            break;
-        }
-    }
+    copy_subtree_profile(v);
 
     v.dominate_rank_profile();
     //v.tag_common = 0; // reset the counter now that we're "in place".
@@ -925,22 +938,21 @@ async function _layout(v, distance) {
 }
 
 function constrain_by_left_profile(v, wantedMove) {
-    if (wantedMove == 0) return 0;
-
-    let leftProfileRoot = rank_profile_left(v);
-    if (!leftProfileRoot) {
-        console.log("no left root.");
-        return wantedMove;
-    }
-
-    leftProfileRoot.tag = 3;
-
     let leftEdge = v.subtree_left_edge();
 
     for (let i = 0; i < leftEdge.length; i++) {
-        let leftmargin = leftProfileRoot.right_profile_xformed(v.rank + 1 + i) + W_SEPARATION;
-        let targetX = leftEdge[i].layout_left_side(i) + wantedMove;
-            
+        let leftProfileRoot = rank_profile_left(leftEdge[i]);
+        if (!leftProfileRoot) {
+            console.log("no left root.");
+            return wantedMove;
+        }
+
+        leftProfileRoot.tag = 5;
+
+        let leftmargin = leftProfileRoot.right_profile_xformed(v.rank + i) + W_SEPARATION;
+        //let targetX = leftEdge[i].layout_left_side() + wantedMove;
+        let targetX = v.left_profile_for_rank(v.rank + i) + wantedMove;
+
         let overlap = targetX - leftmargin;
             
         if (overlap < 0) {
@@ -951,22 +963,42 @@ function constrain_by_left_profile(v, wantedMove) {
     return wantedMove;
 }
 
+function constrain_by_right_profile(v, wantedMove) {
+    let rightEdge = v.subtree_right_edge();
+
+    for (let i = 0; i < rightEdge.length; i++) {
+        let rightProfileRoot = rank_profile_right(rightEdge[i]);
+        if (!rightProfileRoot) {
+            console.log("no right root.");
+            return wantedMove;
+        }
+
+        rightProfileRoot.tag = 5;
+
+        let rightMargin = rightProfileRoot.left_profile_xformed(v.rank + i) - W_SEPARATION;
+        //let targetRightEdge = rightEdge[i].layout_right_side() + wantedMove;
+        let targetRightEdge = v.right_profile_for_rank(v.rank + i) + wantedMove;
+
+        let overlap = targetRightEdge - rightMargin;
+
+        if (overlap > 0) {
+            wantedMove -= overlap;
+        }
+    }
+
+    return wantedMove;
+}
+
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
     const nodeLocalEdgeLists = true;
 
-    //v.highlight_edges("cyan");
+    v.tag3 = 5;
     
 
     if (wantedMove == 0) { 
         return 0; 
     }
     else if (wantedMove < 0) { // we're moving left
-        let leftProfile = rank_profile_left(v);
-        if (leftProfile) {
-             leftProfile.tag_profile = 3;
-             v.tag3 = 3;
-        }
-
         if (PROFILE_COLLISION_MODE) {
             wantedMove = constrain_by_left_profile(v, wantedMove);
         }
@@ -982,14 +1014,19 @@ function do_constrained_move(v, wantedMove, doRightCheck = true) {
         }
     }
     else if (doRightCheck && wantedMove > 0) {
-        let rightEdge;
-        if (nodeLocalEdgeLists) {
-            rightEdge = v.subtree_right_edge();
+        if (PROFILE_COLLISION_MODE) {
+            wantedMove = constrain_by_right_profile(v, wantedMove);
         }
         else {
-            rightEdge = wavefront_subtree_right_edge(v);;
+            let rightEdge;
+            if (nodeLocalEdgeLists) {
+                rightEdge = v.subtree_right_edge();
+            }
+            else {
+                rightEdge = wavefront_subtree_right_edge(v);;
+            }
+            wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
         }
-        wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
     }
 
     const deferred = DEFERRED_MOVE_MODE;
@@ -1293,8 +1330,8 @@ var set_node_data = function(n) {
         "common count" : n.tag_common,
         "depth" : n.maxdepth, 
         "n nodes" : Object.keys(_all_nodes).length,
-        "layout count" : LAYOUT_RECURSION_COUNTER,
         "sum count" : DELTA_SUM_COUNTER,
+        "profile updates" : PROFILE_UPDATES,
         "left count" : LEFT_SIDE_COUNTER,
         "right count" : RIGHT_SIDE_COUNTER,
         "total moves" : MOVE_COUNTER
