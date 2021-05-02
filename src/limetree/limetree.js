@@ -275,6 +275,11 @@ class LiveNode {
         this.childIdeals = new Array();
         this.leftEdgeByRank = new Array(); // int -> RANK ORDER
         this.rightEdgeByRank = new Array(); // int -> RANK ORDER
+
+        this.rightProfile = new Array();
+        this.leftProfile = new Array();
+
+        this.payload['lefts'] = this.leftProfile;
     }
 
     rank_left_edge(rank) {
@@ -387,6 +392,9 @@ class LiveNode {
         this.leftEdgeByRank.push(this.rankorder); // our own level.
         this.rightEdgeByRank.push(this.rankorder);
 
+        this.leftProfile.push(this.x); // ultimately meaningless, and will be reassigned, but whatever.
+        this.rightProfile.push(this.x + this.boxwidth);
+
         if (!this.leaf()) {
             let depthCount = this.maxdepth - this.rank; // must be non-zero for non-leaf
             for (let i = 0; i < depthCount; i++) {
@@ -394,6 +402,9 @@ class LiveNode {
                 let edges = this.sigma(r);
                 this.leftEdgeByRank.push(edges['l']);
                 this.rightEdgeByRank.push(edges['r']);
+
+                this.leftProfile.push(null);
+                this.rightProfile.push(null);
             }
         }
 
@@ -401,6 +412,43 @@ class LiveNode {
         this.pos_y = this.rank * RANK_SEPARATION;
 
         return this.maxdepth;
+    }
+
+    right_profile_for_rank(rank) {
+        if (rank < this.rank || rank > this.maxdepth) return null;
+        return this.rightProfile[rank - this.rank];
+    }
+
+    set_right_profile(rank, value) {
+        this.rightProfile[rank - this.rank] = value;
+    }
+
+    move_right_profile(rank, delta) {
+        this.rightProfile[rank - this.rank] += delta;
+    }
+
+
+    left_profile_for_rank(rank) {
+        if (rank < this.rank || rank > this.maxdepth) return null;
+        return this.leftProfile[rank - this.rank];
+    }
+
+    set_left_profile(rank, value) {
+        this.leftProfile[rank - this.rank] = value;
+    }
+
+    move_left_profile(rank, delta) {
+        this.leftProfile[rank - this.rank] += delta;
+    }
+
+    move_whole_profile(delta) {
+        for (let i = 0; i < this.rightProfile.length; i++) {
+            this.rightProfile[i] += delta;
+        }
+
+        for (let i = 0; i < this.leftProfile.length; i++) {
+            this.leftProfile[i] += delta;
+        }
     }
 
     highlight_edges(v1, v2) {
@@ -583,12 +631,16 @@ class LiveNode {
         }
 
         if (tagged_common) {
+            if (this.non_tagging_delta_sum() == 0) {
+                ctx.setLineDash([5, 5]);
+            }
             ctx.lineWidth = 4;
             ctx.strokeStyle = "orange";
             ctx.strokeRect(this.pos_x - 16, this.top() - 16, this.boxwidth + 32, BOX_HEIGHT + 32);
+            ctx.setLineDash([]);
         }
 
-        if (this.last_common > 0) {
+        if (false && this.last_common > 0) {
             ctx.lineWidth = 4;
             ctx.strokeStyle = "blue";
             ctx.strokeRect(this.pos_x - 12, this.top() - 12, this.boxwidth + 24, BOX_HEIGHT + 24);
@@ -598,6 +650,7 @@ class LiveNode {
         ctx.strokeStyle = style.outline;
         ctx.fillStyle = style.fillStyle;
         ctx.fillRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
+
         if (false && DEFERRED_MOVE_MODE && this.moveCount != 0) {
             ctx.lineWidth = 4;
             if (this.moveCount == 1) {
@@ -618,6 +671,7 @@ class LiveNode {
             }
             ctx.strokeRect(this.pos_x, this.top(), this.boxwidth, BOX_HEIGHT);
         }
+
         ctx.fillStyle = 'black';
         ctx.fillText(label, this.pos_x + BOX_W_MARGIN, this.pos_y);
 
@@ -629,6 +683,38 @@ class LiveNode {
         if (!finishedLayout) {
             this.highlight = false;
         }
+    }
+}
+
+function draw_node_profile(ctx, n) {
+    for (let rank = n.rank; rank <= n.maxdepth; rank++) {
+        ctx.strokeStyle = 'orange';
+        ctx.lineWidth = 6;
+
+        let rightProfile = n.right_profile_for_rank(rank);
+        if (rightProfile == null) {
+            console.log("no right profile");
+        }
+
+        let leftProfile = n.left_profile_for_rank(rank);
+        if (leftProfile == null) {
+            console.log("no left profile");
+        }
+
+        let rightProfileX = rightProfile + n.non_tagging_delta_sum();
+        let leftProfileX = leftProfile + n.non_tagging_delta_sum();
+
+        ctx.beginPath();
+        ctx.moveTo(rightProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
+        ctx.lineTo(rightProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET + BOX_HEIGHT);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'cyan';
+
+        ctx.beginPath();
+        ctx.moveTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
+        ctx.lineTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET + BOX_HEIGHT);
+        ctx.stroke();
     }
 }
 
@@ -680,12 +766,16 @@ async function _layout(v, distance) {
         v.x = 0.0;
     }
 
+    v.set_left_profile(v.rank, v.x);
+    v.set_right_profile(v.rank, v.x + v.boxwidth);
+
     await debug_step(); // DEBUG
+    
     if (v.leaf()) {
         mark_wave(v);
         return;
     }
-    
+
     // inner node
     let cCount = v.count();
     for (let i = 0; i < cCount; i++) {
@@ -699,6 +789,8 @@ async function _layout(v, distance) {
     let natural = midpoint - v.halfw();
     v.x = natural; // set the natural midpoint, but we'll still adjust farther along
     
+    v.set_left_profile(v.rank, v.x);
+    v.set_right_profile(v.rank, v.x + v.boxwidth);
     
     let lefthandMargin = 0;
     let lefthand = rank_left(v);
@@ -710,8 +802,6 @@ async function _layout(v, distance) {
     let wantedMove = lefthandMargin - natural;
 
     do_constrained_move(v, wantedMove, false);
-
-    v.tag_common = 0; // reset the counter now that we're "in place".
 
     const rearrangeInners = true;
     if (rearrangeInners) {
@@ -725,17 +815,36 @@ async function _layout(v, distance) {
         }
     }
 
+    let leftChild = v.child(0);
+    v.set_left_profile(v.rank + 1, leftChild.left_profile_for_rank(v.rank + 1) + leftChild.delta);
+
+    let rightChild = v.child(-1);
+    v.set_right_profile(v.rank + 1, rightChild.right_profile_for_rank(v.rank + 1) + rightChild.delta);
+
+    for (let i = v.rank + 2; i <= v.maxdepth; i++) { // not my rank, and not my children's rank either
+        for (let e of Array.from(v.children).reverse()) {
+            let c = e.target;
+            let childProfile = c.right_profile_for_rank(i);
+            if (childProfile == null) continue;
+            v.set_right_profile(i, childProfile + c.delta);
+            break;
+        }
+
+        for (let e of v.children) {
+            let c = e.target;
+            let childProfile = c.left_profile_for_rank(i);
+            if (childProfile == null) continue;
+            v.set_left_profile(i, childProfile + c.delta);
+            break;
+        }
+    }
+
+    v.tag_common = 0; // reset the counter now that we're "in place".
+
     if (v.tag_common > 0) {
         console.log(v.label, v.tag_common);
     }
 
-    // if ('already_placed' in v.payload) {
-    //     whatthefuck();
-    // }
-    // else {
-    //     v.tag_common = 0; // reset the counter now that we're "in place".
-    //     v.payload['already_placed'] = true;
-    // }
 
     mark_wave(v);
     await debug_step(); // DEBUG
@@ -745,10 +854,10 @@ async function _layout(v, distance) {
 function do_constrained_move(v, wantedMove, doRightCheck = true) {
     const nodeLocalEdgeLists = true;
 
-    v.highlight_edges("orange");
+    v.highlight_edges("cyan");
 
     if (wantedMove == 0) { 
-        return; 
+        return 0; 
     }
     else if (wantedMove < 0) { // we're moving left
         let leftEdge;
@@ -779,7 +888,11 @@ function do_constrained_move(v, wantedMove, doRightCheck = true) {
     }
     else {
         move_tree(v, wantedMove);
-    }    
+    }
+
+    v.move_whole_profile(wantedMove);
+
+    return wantedMove; // return the amount actually moved.
 }
 
 function search_rank_left_for_descendant(root, rank) {
@@ -892,7 +1005,12 @@ function constrain_by_right_edge(edge_list, amount) {
 
 
 var move_tree_deferred = function(root, amount) {
-    root.delta += amount;
+    //root.delta += amount; // this doesn't work with the profile caching
+    root.x += amount;
+
+    for (let e of root.children) {
+        e.target.delta += amount;
+    }
 
     MOVE_COUNTER++;
     root.moveCount++;
@@ -1041,12 +1159,12 @@ var layout_obj = function(parent_div, name, o, extra) {
 var set_node_data = function(n) {
     if (n == _displayed_node) return;
 
-    if (_displayed_node) {
-        _displayed_node.highlight_edges(false);
-    }
+    // if (_displayed_node) {
+    //     _displayed_node.highlight_edges(false);
+    // }
 
     _displayed_node = n;
-    _displayed_node.highlight_edges("orange", "cyan");
+    //_displayed_node.highlight_edges("orange", "cyan");
     if (finishedLayout) {
         draw_all_configured();
     }
@@ -1055,8 +1173,10 @@ var set_node_data = function(n) {
     info_div.innerText = "";
     let extra = {
         "delta" : n.delta, 
-        "deltasum" : n.non_tagging_delta_sum(), 
+        "deltasum" : n.non_tagging_delta_sum(),
+        "x" : n.x,
         "id" : n.id,
+        "redge" : n.x + n.boxwidth,
         "node moves" : n.moveCount,
         "placed at" : n.placedStep,
         "last move" : n.lastMoveStep,
@@ -1076,7 +1196,7 @@ var set_node_data = function(n) {
 // Startup
 
 
-var load_nodes = function() {
+var load_nodes = function(ctx) {
     let data = JSON.parse(_node_data);
 
     for (let sk in data["styles"]) {
@@ -1099,7 +1219,9 @@ var load_nodes = function() {
         //not yet implemented
     }
 
+    iter_all(n => n.measure_self(ctx));
     _root_node.rank_self(0, new Set());
+    iter_all(n => n.calculate_ideal_child_positions());
 }
 
 
@@ -1117,6 +1239,10 @@ var draw_all = function(canvas) {
         ctx.scale(g_scale, g_scale);
         ctx.translate(-g_pan_x, -g_pan_y);
         iter_all(n => n.draw(ctx));
+
+        if (_displayed_node) {
+            draw_node_profile(ctx, _displayed_node);
+        }
         ctx.restore();
     }
 }
@@ -1124,10 +1250,13 @@ var draw_all = function(canvas) {
 var draw_all_configured;
 
 var start_limetree = function() {
-    load_nodes();
-    set_node_data(_root_node);
-
     let canvas = document.getElementById('tree_canvas');
+    let ctx = canvas.getContext('2d'); // we need this first to measure nodes.
+
+    load_nodes(ctx);
+    //set_node_data(_root_node);
+
+    
     canvas.addEventListener('mousedown', _mouse_down);
     canvas.addEventListener('mouseup', _mouse_up);
     canvas.addEventListener('mousemove', _mouse_moved);
@@ -1143,12 +1272,9 @@ var start_limetree = function() {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    let ctx = canvas.getContext('2d');
+    
 
     draw_all_configured = _ => draw_all(canvas);
-
-    iter_all(n => n.measure_self(ctx));
-    iter_all(n => n.calculate_ideal_child_positions());
 
     layout_tree(_root_node);
     
