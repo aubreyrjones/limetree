@@ -11,7 +11,7 @@ MAX_DEPTH = 12
 
 LEAF_PROBABILITY = 0.2
 
-MAX_NODE_COUNT = 600
+MAX_NODE_COUNT = 900
 cur_node_count = 0
 
 random.seed()
