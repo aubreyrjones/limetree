@@ -37,7 +37,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(10);
+    return sleep(100);
 }
 
 var finishedLayout = false;
@@ -161,7 +161,7 @@ let _styles = {
 let _node_label_keys = [];
 let _payload_mask_objects = [];
 
-var g_pan_x = -100;
+var g_pan_x = -1800;
 var g_pan_y = -200;
 var g_scale = 0.6;
 
@@ -792,10 +792,8 @@ async function _lda_layout(node, rank_margins, rightwardness) {
     // we have children, so we're guaranteed to place a node in the next row.
     // adjust its minimum possible margin
     let nextMargins = rank_margins[node.rank + 1];
-    //rank_margins[node.rank + 1] = Math.max(nextMargins, rank_margins[node.rank] - node.child(0).boxwidth + SUBTREE_W_SEPARATION);
-    rank_margins[node.rank + 1] = rank_margins[node.rank] - node.child(0).boxwidth + SUBTREE_W_SEPARATION;
-
-    console.log(rank_margins);
+    rank_margins[node.rank + 1] = Math.max(nextMargins, rank_margins[node.rank] - node.child(0).boxwidth + SUBTREE_W_SEPARATION);
+    //rank_margins[node.rank + 1] = rank_margins[node.rank] - node.child(0).boxwidth + SUBTREE_W_SEPARATION;
 
     for (let e of node.children) {
         let c = e.target;
@@ -811,17 +809,53 @@ async function _lda_layout(node, rank_margins, rightwardness) {
 
 async function _lda_skew_tree(node, parent_skew) {
     if (node.leaf()) {
+        await debug_step(); // DEBUG
         node.x += parent_skew;
         return;
     }
 
+    let naturalPosition = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
+    naturalPosition -= node.halfw();
 
+    console.log(node.label, naturalPosition, node.x);
+
+    let skew = node.x - naturalPosition;
+    node.x += parent_skew;
+
+    await debug_step(); // DEBUG
+    for (let e of node.children) {
+        await _lda_skew_tree(e.target, parent_skew + skew);
+    }
 }
 
 function draw_rank_margins(rank_margins) {
     for (let i = 0; i < rank_margins.length; i++) {
 
     }
+}
+
+
+async function layout_tree(root) {
+    let before = Date.now();
+
+    //_layout(root, W_SEPARATION);  
+
+    let rank_margins = new Array(root.maxdepth + 1);
+    for (let i = 0; i <= root.maxdepth + 1; i++) {
+        rank_margins[i] = 0;
+    }
+    await _lda_layout(root, rank_margins, 0);
+    await _lda_skew_tree(root, 0);
+
+    let after = Date.now();
+    _layout_runtime = after - before;
+
+
+    root.resolve_delta(0.0);
+
+    iter_all(n => n.pos_x = n.x);
+    finishedLayout = true;
+    draw_all_configured();
 }
 
 
@@ -1298,26 +1332,6 @@ var move_tree = function(v, amount) {
 
 var _layout_runtime = -1;
 
-async function layout_tree(root) {
-    let before = Date.now();
-
-    //_layout(root, W_SEPARATION);  
-
-    let rank_margins = new Array(root.maxdepth + 1);
-    for (let i = 0; i <= root.maxdepth + 1; i++) {
-        rank_margins[i] = 0;
-    }
-    await _lda_layout(root, rank_margins, 0);
-
-    let after = Date.now();
-    _layout_runtime = after - before;
-
-
-    root.resolve_delta(0.0);
-
-    iter_all(n => n.pos_x = n.x);
-    finishedLayout = true;
-}
 
 // UI
 
@@ -1458,7 +1472,8 @@ var set_node_data = function(n) {
     let info_div = document.getElementById("node_info");
     info_div.innerText = "";
     let extra = {
-        "x" : n.x
+        "x" : n.x,
+        "delta" : n.delta
     };
     // let extra = {
     //     "delta" : n.delta, 
