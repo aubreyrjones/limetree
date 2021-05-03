@@ -7,7 +7,7 @@ MIN_NAME_LENGTH = 5
 MAX_NAME_LENGTH = 8
 MIN_CHILDREN = 1
 MAX_CHILDREN = 5
-MAX_DEPTH = 12
+MAX_DEPTH = 16
 
 LEAF_PROBABILITY = 0.2
 
@@ -29,8 +29,8 @@ def rand_node(depth = 0):
     if depth >= MAX_DEPTH: return None
 
     global cur_node_count
-    if cur_node_count >= MAX_NODE_COUNT:
-        return
+    # if cur_node_count >= MAX_NODE_COUNT:
+    #     return
     rval = {}
     rval['!id'] = cur_node_count
     cur_node_count += 1
@@ -42,7 +42,7 @@ def rand_node(depth = 0):
     if random.random() > leaf_prob:
         return rval
     
-    nchildren = random.randrange(1, MAX_CHILDREN)
+    nchildren = random.randrange(MIN_CHILDREN, MAX_CHILDREN)
     
     for i in range(nchildren):
         c = rand_node(depth + 1)
