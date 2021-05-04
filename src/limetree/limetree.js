@@ -829,9 +829,25 @@ async function _lda_skew_tree(node, parent_skew) {
 
 //  ***************************************************************
 
+function make_patch(amount, stoprank) {
+    return {
+        'delta' : amount,
+        'stop' : stoprank
+    }
+}
+
 async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth) {
     node.rightProfile = Array.from(rank_margins); // DEBUG
     let marginSeparation;
+
+    if (profile_patches[node.rank] != null) {
+        let patch = profile_patches[node.rank];
+        rank_margins[node.rank] += patch.delta;
+        if (patch.stop != node.rank) {
+            profile_patches[node.rank + 1] = patch;
+        }
+        profile_patches[node.rank] = null;
+    }
 
     // these cases set up the margins, and measure separations from previous nodes and subtrees for leaves. Inner nodes will overwrite these measurements.
     // this is all mixed together basically because the margin updates and the separation measurements are easiest done right next to each other
@@ -895,6 +911,7 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         let slipDistance = c.minSeparationToUnrelated;
         if (slipDistance > 0) {
             move_tree_deferred(c, -slipDistance);
+            profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
         }
     }
 
@@ -923,14 +940,14 @@ async function layout_tree(root) {
     let rank_margins = new Array(root.maxdepth + 1);
     rank_margins[0] = 0;
 
-    let slack_array = new Array();
-    slack_array.push(0);
+    let patch_array = new Array();
+    patch_array.push(null);
 
     for (let i = 1; i <= root.maxdepth + 1; i++) {
         rank_margins[i] = null;
-        slack_array.push(0);
+        patch_array.push(null);
     }
-    await _lda_layout(root, rank_margins, slack_array);
+    await _lda_layout(root, rank_margins, patch_array);
     //await _lda_skew_tree(root, 0);
 
     let after = Date.now();
