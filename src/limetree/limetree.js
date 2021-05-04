@@ -883,17 +883,46 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
     // our first stab into the left profile, and we ourselves have claimed no
     // ranks
     await _lda_layout(node.child(0), rank_margins, profile_patches, parent_left_depth);
-    let minProfileDistanceToCousins = node.child(0).minSeparationToLeftwardCousins;
-    //let minProfileDistanceToUnrelated = node.child(0).minSeparationToUnrelated;
+    let minProfileDistanceToUnrelated = node.child(0).minSeparationToUnrelated;
+    let minProfileDistanceToNodeCousins = node.child(0).minSeparationToLeftwardCousins; // these are actually this-node cousins, they just start out identical to the left child.
 
     let claimedDepth = node.child(0).maxdepth;
 
     for (let i = 1; i < node.count(); i++) {
         let c = node.child(i);
         await _lda_layout(c, rank_margins, profile_patches, claimedDepth);
-        if (c.maxdepth > claimedDepth) {
+        
+        let potentialInternalSlack = c.minSeparationToLeftwardCousins; // these are its own cousins here inside this-node, which it must have some separation to, even if 0
+
+        if (potentialExternalSlack != null) { // we could maybe move left?
+            let potentialExternalSlack = c.minSeparationToUnrelated;
+            let minSeparation = Math.min(potentialInternalSlack, potentialExternalSlack);
+            move_tree_deferred(c, -minSeparation); // move the tree over
+        }
+
+        
+
+        
+
+        /* patch the profiles here */
+
+        potentialInternalSlack -= minSeparation; // update the slack values
+        potentialExternalSlack -= minSeparation;
+
+        if (potentialInternalSlack > 0) {
+            for (let j = 0; j < i; j++) {
+                move_tree_deferred(node.child(j), -potentialInternalSlack);
+            }
+        }
+
+        if (c.maxdepth > parent_left_depth) {
+            minProfileDistanceToUnrelated = Math.min(minProfileDistanceToUnrelated, c.minSeparationToUnrelated);
+        }
+
+        if (c.maxdepth > claimedDepth) { 
             claimedDepth = c.maxdepth;
         }
+
     }
 
     node.leftProfile = Array.from(rank_margins); // DEBUG
@@ -908,7 +937,7 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
     node.nodeNeighborSeparation = marginSeparation + centeringSeparation; //Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
 
     node.minSeparationToUnrelated = Math.min(node.nodeNeighborSeparation, minProfileDistanceToUnrelated);
-    node.minSeparationToLeftwardCousins = Math.min(node.nodeNeighborSeparation, minProfileDistanceToCousins);
+    
 
     await debug_step(); // DEBUG
 }
