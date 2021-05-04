@@ -828,24 +828,37 @@ async function _lda_skew_tree(node, parent_skew) {
 
 //  ***************************************************************
 
-async function _lda_layout(node, rank_margins, profile_patches) {
-    node.rightProfile = Array.from(rank_margins);
+async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth) {
+    node.rightProfile = Array.from(rank_margins); // DEBUG
+
     if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
-        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0];
+        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin
 
         if (rank_margins[node.rank] == null) { // virgin rank
-            rank_margins[node.rank] = nextStart;
-            node.minLeftProfileSeparation = 100000000000; // +infinity
+            rank_margins[node.rank] = nextStart; // just set the ideal as the margin
+
+            node.minLeftProfileSeparation = 10000000; // could move +infinity leftward from its current position
+            node.minInternalSeparation = node.minLeftProfileSeparation; // also +infinity
         }
-        else {
+        else { // there's something to the left
             let startMargin = rank_margins[node.rank];
-            console.log(node.label, node.id, startMargin);
-            rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart);
-            node.minLeftProfileSeparation = rank_margins[node.rank] - startMargin;
+            rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart); // either the ideal spot, or as far leftward as allowed by current rank margin.
+
+            let marginSeparation = rank_margins[node.rank] - startMargin;
+            if (node.rank > parent_left_depth) { // our left neighbor is not from a tree claimed by our parent
+                node.minLeftProfileSeparation = marginSeparation;
+                node.minInternalSeparation = marginSeparation;
+            }
+            else {
+                node.minLeftProfileSeparation = NaN; // our left neighbor _is_ from the same parent, and if we're a leaf we cannot have a separation outside the parent's leftward processed tree
+                node.minInternalSeparation = marginSeparation;
+            }
         }
     }
-    else if(node.rank > 0 && node.sib_index > 0) { // a little ugly because we want to skip root in both cases
+    else if(node.rank > 0 //skip root again
+        && node.sib_index > 0) { 
         // these nodes "naturally" get laid out exactly next to their sibling.
+        node.minLeftProfileSeparation = NaN; // we know that a right leaf sibling can't have an external separation at its own rank, but an internal node can.
         node.minInternalSeparation = 0; // the internal separation between two direct siblings must be zero for nodes whose centering below doesn't move them.
     }
 
@@ -858,17 +871,80 @@ async function _lda_layout(node, rank_margins, profile_patches) {
         return;
     }
 
-    await _lda_layout(node.child(0), rank_margins, profile_patches);
+    // for the left child, we recurse directly with the parent's idea of leftness, which
+    // lets us initiate the separation between internal and external separations.
+    await _lda_layout(node.child(0), rank_margins, profile_patches, parent_left_depth);
+
+    // we know we have children at this point, and the first has been laid out.
+    // At this point we can't possibly move any farther left than our leftmost child's idea
+    // of separation from the established tree. It can't have an internal separation,
+    // as all trees before it are from some other subtree.
+    // we also know there's a defined external separation, even if it's infinite,
+    // because this child is of a lower rank than ourselves so it has to have its own
+    // separation value at least. Our own separation is irrelevant and undefined right now
+    // because we won't know it until we center this node.
+    let childMinExternalSeparation = node.child(0).minLeftProfileSeparation;
+    let parentRelativeInternalSeparation = node.child(0).minInternalSeparation;
+    let claimedDepth = node.child(0).maxdepth;
+
+    console.log("LEFT CHILD OF", node.label, node.id, childMinExternalSeparation, parentRelativeInternalSeparation);
 
     for (let i = 1; i < node.count(); i++) {
         let c = node.child(i);
-        await _lda_layout(c, rank_margins, profile_patches);
+        await _lda_layout(c, rank_margins, profile_patches, claimedDepth);
+
+        let childExternalSep = c.minLeftProfileSeparation;
+        let childInternalSep = c.minInternalSeparation;
+        
+
+        if (isNaN(childExternalSep)) { // at no point did this subtree separate from the external tree, had only internal collisions.
+            // This also means it can't be separated from the internal tree. There's nothing to do here but continue with the rank-by-rank layout.
+            console.log("HAS NO EXTERNAL SEP", c.label, c.id);
+            continue;
+        }
+
+        // we assert that any rightward subtree _must_ have a defined internal separation
+        if (isNaN(childInternalSep)) { undefined(); }
+
+        console.log("internal external", c.label, c.id, childInternalSep, childExternalSep);
+
+        let minSep = Math.min(childInternalSep, childExternalSep); // find the maximum amount we can move this child left.
+
+        move_tree_deferred(c, -minSep); // slide c over to the left by the maximum amount allowed.
+
+        childInternalSep -= minSep;
+        childExternalSep -= minSep;
+
+        if (childInternalSep > 0) { // we've still got some space internally.
+            // do the rightward move somehow to unglue internal nodes!
+        }
+
+        if (c.maxdepth > claimedDepth) { // this child has claimed ranks not previously claimed by a child of ours
+            childMinExternalSeparation = childExternalSep;
+            claimedDepth = c.maxdepth;
+        }
     }
 
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
     midpoint -= node.halfw();
 
-    node.x = midpoint;
+    node.x = Math.max(rank_margins[node.rank], midpoint); // the Math.max here is to deal with a JavaScript rounding error.
+    let marginSeparation = node.x - rank_margins[node.rank];
+
+    // now we can figure out our own separation values, relative to parent, based on
+    // what our children collided with.
+    
+    if (node.maxdepth > parent_left_depth) { // we've pushed into unclaimed territory
+        node.minLeftProfileSeparation = 0; // one of our children either butted up against the tree, throwing us rightward only internally, or we were already built as leftward as possible
+        node.minInternalSeparation = Math.min(marginSeparation, parentRelativeInternalSeparation); // this is the amount the node's subtree is separated from the lefthand child because of interference with other LDAs
+    }
+    else { // our space leftward is entirely with parents' processed ranks or rootward
+        node.minLeftProfileSeparation = NaN; // none of our stuff was deeper
+        node.minInternalSeparation = 0; // because we're blocked by our parents' leftward tree build, we obviously can't move farther leftward
+    }
+
+
+    //console.log("Mininum separation", node.label, node.id, "", node.minLeftProfileSeparation);
 
     rank_margins[node.rank] = node.x + node.boxwidth;
 
