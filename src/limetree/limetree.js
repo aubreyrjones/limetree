@@ -291,12 +291,9 @@ class LiveNode {
         this.delta = 0.0;
         this.childIdeals = new Array();
 
-        this.minLeftProfileSeparation = 0;
-        this.minInternalSeparation = 0;
-
-
-        this.nodeRelativeMinimumProfileSeparation = 0;
-        this.parentRelativeMinimumProfileSeparation = 0;
+        this.nodeNeighborSeparation = 0;
+        this.minSeparationToLeftwardCousins = 0;
+        this.minSeparationToUnrelated = 0;
 
         this.leftEdgeByRank = new Array(); // int -> RANK ORDER
         this.rightEdgeByRank = new Array(); // int -> RANK ORDER
@@ -834,25 +831,47 @@ async function _lda_skew_tree(node, parent_skew) {
 
 async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth) {
     node.rightProfile = Array.from(rank_margins); // DEBUG
+    let marginSeparation;
 
+    // these cases set up the margins, and measure separations from previous nodes and subtrees for leaves. Inner nodes will overwrite these measurements.
     if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
-        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin
+        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin    
 
         if (rank_margins[node.rank] == null) { // virgin rank
             rank_margins[node.rank] = nextStart; // just set the ideal as the margin
+
+            marginSeparation = 1000000; //there's no left margin, we could move leftward infinitely.
         }
         else { // there's something to the left
             let startMargin = rank_margins[node.rank];
             rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart); // either the ideal spot, or as far leftward as allowed by current rank margin.
+            marginSeparation = rank_margins[node.rank] - startMargin; // we could move leftward to butt up against our leftward neighbor.
+        }
 
-            let marginSeparation = rank_margins[node.rank] - startMargin;
+        // this node is the start of a new subtree, which is the only way to define a left-hand profile chain with any separation
+        // how far leftward could it move, ignoring connectivity.
+        node.nodeNeighborSeparation = marginSeparation;
+
+        // how much separation does this node have beteen itself and any node that isn't a leftward descendant of its parent?
+        // this exclusion principle is only between leftward siblings, 
+        // these cases are only true for leaves, and inners will overwrite
+        if (node.maxdepth >= parent_left_depth) {
+            node.minSeparationToLeftwardCousins = marginSeparation; 
+        }
+        else {
+            // if we're a leaf, and not deeper than our parents' processed leftward children
+            // then we're not ever going to have a parent-relative separation
+            node.minSeparationToLeftwardCousins = null;
         }
     }
-    else if(node.rank > 0 //skip root again
-        && node.sib_index > 0) { 
+    else if(node.rank > 0 && node.sib_index > 0) {
+        // if we're a sibling and a leaf, we're going to be laid out absolutely and correctly the first time
+        // we cannot move leftward toward our immediate sibling
+        // if we're not a leaf, we'll deal with it later on.
+        node.nodeNeighborSeparation = 0;
+        node.minSeparationToLeftwardCousins = null;
+        marginSeparation = 0;
     }
-
-    node.leftProfile = Array.from(rank_margins);
     
     if (node.leaf()) {
         node.x = rank_margins[node.rank];
@@ -861,20 +880,40 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         return;
     }
 
-
     await _lda_layout(node.child(0), rank_margins, profile_patches, parent_left_depth);
+    let claimedDepth = node.child(0).maxdepth;
 
     for (let i = 1; i < node.count(); i++) {
         let c = node.child(i);
-        await _lda_layout(c, rank_margins, profile_patches, 0);
+        await _lda_layout(c, rank_margins, profile_patches, claimedDepth);
+        if (c.maxdepth > claimedDepth) {
+            claimedDepth = c.maxdepth;
+        }
     }
+
+    node.leftProfile = Array.from(rank_margins); // DEBUG
 
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
     midpoint -= node.halfw();
 
-    node.x = Math.max(rank_margins[node.rank], midpoint); // the Math.max here is to deal with a JavaScript rounding error.
-
+    node.x = Math.max(rank_margins[node.rank], midpoint); // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
+    let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
     rank_margins[node.rank] = node.x + node.boxwidth;
+
+    node.nodeNeighborSeparation = marginSeparation + centeringSeparation; //Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
+
+    if (node.rank > parent_left_depth) {
+        let minExclusiveSep = 10000000;
+
+        for (let e of node.children) {
+            let c = e.target;
+            if (c.maxdepth <= parent_left_depth) {
+                continue;
+            }
+            minExclusiveSep = Math.min(c.minSeparationToLeftwardCousins, minExclusiveSep);
+        }
+    }
+    
 
     await debug_step(); // DEBUG
 }
@@ -1550,7 +1589,9 @@ var set_node_data = function(n) {
     info_div.innerText = "";
     let extra = {
         "x" : n.x,
-        "delta" : n.delta
+        "delta" : n.delta,
+        "minsep" : n.nodeNeighborSeparation,
+        "cousin sep" : n.minSeparationToLeftwardCousins
     };
     // let extra = {
     //     "delta" : n.delta, 
