@@ -825,6 +825,8 @@ async function _lda_skew_tree(node, parent_skew) {
 //  ***************************************************************
 
 async function _lda_layout(node, rank_margins) {
+    node.rightProfile = Array.from(rank_margins);
+
     if (node.leaf()) {
         node.x = rank_margins[node.rank];
         rank_margins[node.rank] = node.x + node.boxwidth + W_SEPARATION;
@@ -834,22 +836,24 @@ async function _lda_layout(node, rank_margins) {
 
     let nextStart = rank_margins[node.rank] + node.childIdeals[0];
 
+    let fakeSlack = 0;
+
     if (rank_margins[node.rank + 1] == null) {
         rank_margins[node.rank + 1] = nextStart;
     }
     else {
+        let startMargin = rank_margins[node.rank + 1];
         rank_margins[node.rank + 1] = Math.max(rank_margins[node.rank + 1], nextStart + SUBTREE_W_SEPARATION);
+        fakeSlack = rank_margins[node.rank + 1] - startMargin;
         // I think this creates slack on the next level?
     }
 
-    let slacks = new Array(node.count() - 1);
+    let slacks = new Array();
 
-    await _lda_layout(node.child(0), rank_margins);
-
-    for (let i = 1; i < node.count(); i++) {
+    for (let i = 0; i < node.count(); i++) {
         let c = node.child(i);
         let slack = await _lda_layout(c, rank_margins);
-        slacks[i - 1] = slack;
+        slacks.push(slack);
     }
 
     console.log(node.label, slacks);
@@ -861,6 +865,8 @@ async function _lda_layout(node, rank_margins) {
     let finalX = node.x + node.boxwidth + SUBTREE_W_SEPARATION;
     let slack = finalX - rank_margins[node.rank];
     rank_margins[node.rank] = finalX;
+
+    node.leftProfile = Array.from(rank_margins);
 
     await debug_step(); // DEBUG
     return slack;
@@ -893,6 +899,23 @@ async function layout_tree(root) {
 // *********************************************************************************
 
 function draw_node_profile(ctx, n) {
+    for (let rank = 0; rank <= n.maxdepth; rank++) {
+        ctx.strokeStyle = 'orange';
+        ctx.lineWidth = 6;
+
+        let rightProfileX = n.rightProfile[rank];
+        if (rightProfileX == null) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(rightProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
+        ctx.lineTo(rightProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET + BOX_HEIGHT);
+        ctx.stroke();
+
+    }
+}
+
+
+function NOT_draw_node_profile(ctx, n) {
     for (let rank = n.rank; rank <= n.maxdepth; rank++) {
         ctx.strokeStyle = 'orange';
         ctx.lineWidth = 6;
@@ -907,8 +930,8 @@ function draw_node_profile(ctx, n) {
             //console.log("no left profile");
         }
 
-        let rightProfileX = rightProfile + n.non_tagging_delta_sum();
-        let leftProfileX = leftProfile + n.non_tagging_delta_sum();
+        let rightProfileX = rightProfile;//+ n.non_tagging_delta_sum();
+        let leftProfileX = leftProfile;//+ n.non_tagging_delta_sum();
 
         ctx.beginPath();
         ctx.moveTo(rightProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
@@ -917,10 +940,10 @@ function draw_node_profile(ctx, n) {
 
         ctx.strokeStyle = 'cyan';
 
-        ctx.beginPath();
-        ctx.moveTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
-        ctx.lineTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET + BOX_HEIGHT);
-        ctx.stroke();
+        // ctx.beginPath();
+        // ctx.moveTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
+        // ctx.lineTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET + BOX_HEIGHT);
+        // ctx.stroke();
     }
 }
 
