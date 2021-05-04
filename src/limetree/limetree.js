@@ -290,6 +290,10 @@ class LiveNode {
         this.sib_index = -1;
         this.delta = 0.0;
         this.childIdeals = new Array();
+
+        this.minLeftProfileSeparation = 0;
+        this.minInternalSeparation = 0;
+
         this.leftEdgeByRank = new Array(); // int -> RANK ORDER
         this.rightEdgeByRank = new Array(); // int -> RANK ORDER
 
@@ -824,21 +828,25 @@ async function _lda_skew_tree(node, parent_skew) {
 
 //  ***************************************************************
 
-async function _lda_layout(node, rank_margins, slack_array) {
+async function _lda_layout(node, rank_margins, profile_patches) {
     node.rightProfile = Array.from(rank_margins);
     if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
         let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0];
 
         if (rank_margins[node.rank] == null) { // virgin rank
             rank_margins[node.rank] = nextStart;
-            slack_array[node.rank] = 100000000;
+            node.minLeftProfileSeparation = 100000000000; // +infinity
         }
         else {
             let startMargin = rank_margins[node.rank];
             console.log(node.label, node.id, startMargin);
             rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart);
-            slack_array[node.rank] = rank_margins[node.rank] - startMargin;
+            node.minLeftProfileSeparation = rank_margins[node.rank] - startMargin;
         }
+    }
+    else if(node.rank > 0 && node.sib_index > 0) { // a little ugly because we want to skip root in both cases
+        // these nodes "naturally" get laid out exactly next to their sibling.
+        node.minInternalSeparation = 0; // the internal separation between two direct siblings must be zero for nodes whose centering below doesn't move them.
     }
 
     node.leftProfile = Array.from(rank_margins);
@@ -850,19 +858,18 @@ async function _lda_layout(node, rank_margins, slack_array) {
         return;
     }
 
-    await _lda_layout(node.child(0), rank_margins, slack_array);
+    await _lda_layout(node.child(0), rank_margins, profile_patches);
 
     for (let i = 1; i < node.count(); i++) {
         let c = node.child(i);
-        await _lda_layout(c, rank_margins, slack_array);
+        await _lda_layout(c, rank_margins, profile_patches);
     }
 
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
     midpoint -= node.halfw();
 
-    node.x = midpoint; //Math.max(rank_margins[node.rank], midpoint);
+    node.x = midpoint;
 
-    slack_array[node.rank] = rank_margins[node.rank] - node.x;
     rank_margins[node.rank] = node.x + node.boxwidth;
 
     await debug_step(); // DEBUG
