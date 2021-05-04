@@ -892,37 +892,10 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         let c = node.child(i);
         await _lda_layout(c, rank_margins, profile_patches, claimedDepth);
         
-        let potentialInternalSlack = c.minSeparationToLeftwardCousins; // these are its own cousins here inside this-node, which it must have some separation to, even if 0
-
-        if (potentialExternalSlack != null) { // we could maybe move left?
-            let potentialExternalSlack = c.minSeparationToUnrelated;
-            let minSeparation = Math.min(potentialInternalSlack, potentialExternalSlack);
-            move_tree_deferred(c, -minSeparation); // move the tree over
+        let slipDistance = c.minSeparationToUnrelated;
+        if (slipDistance > 0) {
+            move_tree_deferred(c, -slipDistance);
         }
-
-        
-
-        
-
-        /* patch the profiles here */
-
-        potentialInternalSlack -= minSeparation; // update the slack values
-        potentialExternalSlack -= minSeparation;
-
-        if (potentialInternalSlack > 0) {
-            for (let j = 0; j < i; j++) {
-                move_tree_deferred(node.child(j), -potentialInternalSlack);
-            }
-        }
-
-        if (c.maxdepth > parent_left_depth) {
-            minProfileDistanceToUnrelated = Math.min(minProfileDistanceToUnrelated, c.minSeparationToUnrelated);
-        }
-
-        if (c.maxdepth > claimedDepth) { 
-            claimedDepth = c.maxdepth;
-        }
-
     }
 
     node.leftProfile = Array.from(rank_margins); // DEBUG
