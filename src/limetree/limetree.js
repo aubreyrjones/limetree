@@ -829,17 +829,17 @@ async function _lda_layout(node, rank_margins) {
         node.x = rank_margins[node.rank];
         rank_margins[node.rank] = node.x + node.boxwidth + W_SEPARATION;
         await debug_step(); // DEBUG
-        return null; // leaves can't create slack, they are created perfect.
+        return 0; // leaves can't create slack, they are created perfect.
     }
 
     let nextStart = rank_margins[node.rank] + node.childIdeals[0];
 
     if (rank_margins[node.rank + 1] == null) {
-        console.log("null next rank, setting to", nextStart);
         rank_margins[node.rank + 1] = nextStart;
     }
     else {
         rank_margins[node.rank + 1] = Math.max(rank_margins[node.rank + 1], nextStart + SUBTREE_W_SEPARATION);
+        // I think this creates slack on the next level?
     }
 
     let slacks = new Array(node.count() - 1);
@@ -848,10 +848,11 @@ async function _lda_layout(node, rank_margins) {
 
     for (let i = 1; i < node.count(); i++) {
         let c = node.child(i);
-        await _lda_layout(c, rank_margins);
+        let slack = await _lda_layout(c, rank_margins);
+        slacks[i - 1] = slack;
     }
 
-    //console.log(node.delta);
+    console.log(node.label, slacks);
 
     node.x = rank_margins[node.rank];
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0 - node.halfw();
@@ -862,7 +863,6 @@ async function _lda_layout(node, rank_margins) {
     rank_margins[node.rank] = finalX;
 
     await debug_step(); // DEBUG
-
     return slack;
 }
 
