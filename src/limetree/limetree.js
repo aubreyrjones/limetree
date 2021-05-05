@@ -296,6 +296,8 @@ class LiveNode {
         this.minSeparationToLeftwardCousins = NaN;
         this.minSeparationToUnrelated = NaN;
 
+        this.minLeftProfileSeparation = "uninitialized";
+
         this.leftEdgeByRank = new Array(); // int -> RANK ORDER
         this.rightEdgeByRank = new Array(); // int -> RANK ORDER
 
@@ -864,6 +866,63 @@ function maxsep(a, b) {
     return b;
 }
 
+async function _lda_layout2(node, rank_margins, profile_patches, parent_left_depth) {
+    // patch the profile first. This only resolves any deferred move in this rank,
+    // potentially passing it on to the next rank. We can't have more than one 
+    // patch for a given rank, because whatever tree generated the last patch
+    // must have resolved the prior one as it was laying out.
+    if (profile_patches[node.rank] != null) {
+        let patch = profile_patches[node.rank];
+        rank_margins[node.rank] += patch.delta;
+        if (patch.stop != node.rank) {
+            profile_patches[node.rank + 1] = patch;
+        }
+        profile_patches[node.rank] = null;
+    }
+
+    // Measure and adjust the left margins, getting the offset from where they originally were.
+    let marginSeparation;
+    if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
+        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin    
+
+        if (rank_margins[node.rank] == null) { // virgin rank
+            rank_margins[node.rank] = nextStart; // just set the ideal as the margin
+
+            marginSeparation = 1000000; //there's no left margin, we could move leftward infinitely.
+        }
+        else { // there's something to the left
+            let startMargin = rank_margins[node.rank];
+            rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart); // either the ideal spot, or as far leftward as allowed by current rank margin.
+            marginSeparation = rank_margins[node.rank] - startMargin; // we could move leftward to butt up against our leftward neighbor.
+        }
+    }
+    else if(node.rank > 0 && node.sib_index > 0) {
+        // if we're a sibling and a leaf, we're going to be laid out absolutely and correctly the first time based on the default margin.
+        // we cannot move leftward toward our immediate sibling
+        // if we're not a leaf, we'll deal with it later on.
+        marginSeparation = 0;
+    }
+
+    if (node.leaf()) {
+        node.nodeNeighborSeparation = ranksep(node.rank, marginSeparation);
+        node.minLeftProfileSeparation = ranksep(node.rank, marginSeparation);
+
+        // set the node's position and advance the margin by the node's width
+        node.x = rank_margins[node.rank];
+        rank_margins[node.rank] += node.boxwidth;
+        // add inter-node spacing.
+        if (node.parent && node.sib_index == node.parent.count() - 1) {
+            rank_margins[node.rank] += SUBTREE_W_SEPARATION;
+        }
+        else {
+            rank_margins[node.rank] += W_SEPARATION;
+        }
+    }
+
+}
+
+
+
 async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth, left_sibling_depth) {
     //node.rightProfile = Array.from(rank_margins); // DEBUG
 
@@ -971,7 +1030,7 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
     let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
     rank_margins[node.rank] = node.x + node.boxwidth;
 
-    if (node.parent && node.sib_index == node.parent.count() - 1) {
+    if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
         rank_margins[node.rank] += SUBTREE_W_SEPARATION;
     }
     else {
@@ -980,20 +1039,20 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
 
     node.nodeNeighborSeparation = Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
 
+    let ranksepdist;
+
     if (unrelatedSep != null) {
         // we had a leftward neighbor of higher rank than our parents' processed subchildren, so find the minimum amount we could move
         //console.log("not null at end", node.label, node.id, unrelatedSep);
-        node.minSeparationToUnrelated = minsep(ranksep(node.rank, node.nodeNeighborSeparation), unrelatedSep);
+        ranksepdist = minsep(ranksep(node.rank, node.nodeNeighborSeparation), unrelatedSep);
     }
     else {
         // we never had any leftward neighborship with our parents' external nodes.
         // so we actually can't move anywhere.
         //console.log("null at end", node.label, node.id);
-        node.minSeparationToUnrelated = ranksep(node.rank, 0);
+        ranksepdist = ranksep(node.rank, 0);
     }
 
-    //node.minSeparationToUnrelated = ranksep(node.rank, Math.min(node.nodeNeighborSeparation, minProfileDistanceToUnrelated));
-    //node.minSeparationToLeftwardCousins = Math.min(node.nodeNeighborSeparation, minProfileDistanceToNodeCousins);
 
     await debug_step(); // DEBUG
 }
