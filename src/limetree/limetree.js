@@ -917,9 +917,66 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         else {
             rank_margins[node.rank] += W_SEPARATION;
         }
+        await debug_step(); // DEBUG
+        return;
     }
 
+    let claimedDepth = node.rank;
+    let minimumChildExternalSeparation = null;
+
+    // strict postorder assured by laying out children before touching any of our own node's layout.
+    for (let e of node.children) {
+        let c = e.target;
+        await _lda_layout2(c, rank_margins, profile_patches, claimedDepth);
+
+        if (c.minLeftProfileSeparation.rank > claimedDepth) {
+            minimumChildExternalSeparation = c.minLeftProfileSeparation;
+        }
+    }
+
+    let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
+    midpoint -= node.halfw();
+
+    node.x = midpoint; // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
+    let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
+    rank_margins[node.rank] = node.x + node.boxwidth;
+
+    if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
+        rank_margins[node.rank] += SUBTREE_W_SEPARATION;
+    }
+    else {
+        rank_margins[node.rank] += W_SEPARATION;
+    }
+
+    await debug_step(); // DEBUG
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1072,7 +1129,7 @@ async function layout_tree(root) {
         rank_margins[i] = null;
         patch_array.push(null);
     }
-    await _lda_layout(root, rank_margins, patch_array, 0, 0);
+    await _lda_layout2(root, rank_margins, patch_array, 0, 0);
     //await _lda_skew_tree(root, 0);
 
     let after = Date.now();
