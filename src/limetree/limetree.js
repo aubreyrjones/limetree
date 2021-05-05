@@ -28,7 +28,7 @@ var DEFERRED_MOVE_MODE = true;
 
 var PROFILE_COLLISION_MODE = true && DEFERRED_MOVE_MODE;
 
-var MOVE_INNER_MODE = false;
+var MOVE_INNER_MODE = true;
 
 
 function sleep(ms) {
@@ -37,7 +37,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(150);
+    return sleep(200);
 }
 
 var finishedLayout = false;
@@ -47,8 +47,8 @@ const exrp = p => (1.5**p) * (0.15 ** (1 - p));
 const RANK_SEPARATION = 60.0;
 const BOX_W_MARGIN = 4;
 
-const W_SEPARATION = 20;
-const SUBTREE_W_SEPARATION = 80;
+const W_SEPARATION = 5;
+const SUBTREE_W_SEPARATION = 10;
 const SUBTREE_W_GEOMETRIC_FACTOR = 1;
 
 const BOX_TOP_OFFSET = 26;
@@ -221,7 +221,8 @@ class LiveNode {
         this.lastMoveStep = -1;
         this.placedStep = -1;
         this.tag_profile = false;
-
+        this.left_parent_depth_at_layout = -1;
+        this.left_sib_debug_depth = -1;
         
 
         // get the id
@@ -355,7 +356,7 @@ class LiveNode {
 
         let childWidth = 0;
         this.children.forEach(e => childWidth += e.target.boxwidth);
-        childWidth += (this.count() - 1);
+        childWidth += W_SEPARATION * (this.count() - 1);
 
         let lStart = (-childWidth / 2.0) + this.halfw();
         for (let e of this.children) {
@@ -849,8 +850,14 @@ function make_patch(amount, stoprank) {
     }
 }
 
-async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth) {
+function ranksep(rank, separation) {
+    return {"rank" : rank, "sep": separation};
+}
+
+async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth, left_sibling_depth) {
     node.rightProfile = Array.from(rank_margins); // DEBUG
+    node.left_parent_depth_at_layout = parent_left_depth;
+    node.left_sib_debug_depth = left_sibling_depth;
     let marginSeparation;
 
     if (profile_patches[node.rank] != null) {
@@ -893,7 +900,7 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         // this exclusion principle is only between leftward siblings, 
         // these cases are only true for leaves
         if (node.maxdepth <= parent_left_depth) {
-            node.minSeparationToLeftwardCousins = marginSeparation;
+            node.minSeparationToLeftwardCousins = ranksep(node.rank, marginSeparation);
             node.minSeparationToUnrelated = null;
         }
         else {
@@ -903,6 +910,12 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
     
         node.x = rank_margins[node.rank];
         rank_margins[node.rank] += node.boxwidth;
+        if (node.parent && node.sib_index == node.parent.count() - 1) {
+            rank_margins[node.rank] += SUBTREE_W_SEPARATION;
+        }
+        else {
+            rank_margins[node.rank] += W_SEPARATION;
+        }
         await debug_step(); // DEBUG
         return;
     }
@@ -911,22 +924,33 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
     // We run it with the parent left depth, because by definition this node defines
     // our first stab into the left profile, and we ourselves have claimed no
     // ranks
-    await _lda_layout(node.child(0), rank_margins, profile_patches, parent_left_depth);
+    await _lda_layout(node.child(0), rank_margins, profile_patches, parent_left_depth, left_sibling_depth);
     let minProfileDistanceToUnrelated = node.child(0).minSeparationToUnrelated;
-    let minProfileDistanceToNodeCousins = node.child(0).minSeparationToLeftwardCousins; // these are actually this-node cousins, they just start out identical to the left child.
+    //let minProfileDistanceToNodeCousins = node.child(0).minSeparationToLeftwardCousins; // these are actually this-node cousins, they just start out identical to the left child.
 
     let claimedDepth = node.child(0).maxdepth;
 
     for (let i = 1; i < node.count(); i++) {
         let c = node.child(i);
-        await _lda_layout(c, rank_margins, profile_patches, claimedDepth);
+        await _lda_layout(c, rank_margins, profile_patches, claimedDepth, node.child(i - 1).maxdepth);
         
         let slipDistance = c.minSeparationToUnrelated;
         if (slipDistance > 0) {
+            console.log("contraction");
             move_tree_deferred(c, -slipDistance);
-            c.minSeparationToLeftwardCousins -= slipDistance;
+            await debug_step(); // DEBUG
+            //c.minSeparationToLeftwardCousins -= slipDistance;
             profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
         }
+
+        // if (c.minSeparationToLeftwardCousins > 0) { // unglue
+        //     for (let j = i - 1; j > 0; j--) { // move only internal nodes, not either side.
+        //         let leftChild = node.child(j);
+        //         let rightMove = Math.min(node.child(j + 1).minSeparationToLeftwardCousins, node.childIdeals[leftChild.sib_index]);
+        //         move_tree_deferred(leftChild, rightMove);
+        //         leftChild.minSeparationToLeftwardCousins += rightMove;
+        //     }
+        // }
 
         if (c.maxdepth > claimedDepth) claimedDepth = c.maxdepth;
     }
@@ -936,14 +960,21 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
     midpoint -= node.halfw();
 
-    node.x = Math.max(rank_margins[node.rank], midpoint); // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
+    node.x = midpoint; // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
     let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
     rank_margins[node.rank] = node.x + node.boxwidth;
+
+    if (node.parent && node.sib_index == node.parent.count() - 1) {
+        rank_margins[node.rank] += SUBTREE_W_SEPARATION;
+    }
+    else {
+        rank_margins[node.rank] += W_SEPARATION;
+    }
 
     node.nodeNeighborSeparation = marginSeparation + centeringSeparation; //Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
 
     node.minSeparationToUnrelated = Math.min(node.nodeNeighborSeparation, minProfileDistanceToUnrelated);
-    
+    //node.minSeparationToLeftwardCousins = Math.min(node.nodeNeighborSeparation, minProfileDistanceToNodeCousins);
 
     await debug_step(); // DEBUG
 }
@@ -963,7 +994,7 @@ async function layout_tree(root) {
         rank_margins[i] = null;
         patch_array.push(null);
     }
-    await _lda_layout(root, rank_margins, patch_array);
+    await _lda_layout(root, rank_margins, patch_array, 0, 0);
     //await _lda_skew_tree(root, 0);
 
     let after = Date.now();
@@ -1611,7 +1642,10 @@ var set_node_data = function(n) {
         "delta" : n.delta,
         "left sep" : n.nodeNeighborSeparation,
         "cousin sep" : n.minSeparationToLeftwardCousins,
-        "unrelated sep" : n.minSeparationToUnrelated
+        "rank" : n.rank,
+        "unrelated sep" : n.minSeparationToUnrelated,
+        "parent wave" : n.left_parent_depth_at_layout,
+        "left sibling depth" : n.left_sib_debug_depth
     };
     // let extra = {
     //     "delta" : n.delta, 
@@ -1730,8 +1764,8 @@ var start_limetree = function() {
 }
 
 // parse trees
-const _node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "gl_Position:", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 7, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 8, "line": -1, "attr": {}, "c": []}]}, {"production": "MMult", "type": null, "value": null, "id": 9, "line": 3, "attr": {}, "c": [{"production": "MMult", "type": null, "value": null, "id": 10, "line": 3, "attr": {}, "c": [{"production": "MMult", "type": null, "value": null, "id": 11, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "u[", "id": 13, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 14, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "projMatrix:", "id": 15, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 16, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 17, "line": 3, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "mat4", "id": 18, "line": 3, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 19, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 20, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "u[", "id": 21, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 22, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "viewMatrix:", "id": 23, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 24, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 25, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "mat4", "id": 26, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 27, "line": -1, "attr": {}, "c": []}]}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 28, "line": 5, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "u[", "id": 29, "line": 5, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 30, "line": 5, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "modelMatrix:", "id": 31, "line": 5, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 33, "line": 5, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "mat4", "id": 34, "line": 5, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 35, "line": -1, "attr": {}, "c": []}]}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 36, "line": 6, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 37, "line": 6, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 38, "line": 6, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "position:", "id": 39, "line": 6, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 40, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 41, "line": 6, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 42, "line": 6, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 43, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 44, "line": 6, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 45, "line": 8, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 46, "line": 8, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 47, "line": 8, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 48, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 49, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 50, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 51, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 52, "line": 8, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 53, "line": 9, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 54, "line": 9, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 55, "line": 9, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 56, "line": 9, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 57, "line": 9, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 58, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 59, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 60, "line": 10, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 61, "line": 10, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 62, "line": 10, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 63, "line": 10, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 64, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 65, "line": 10, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 66, "line": 10, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 67, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 68, "line": 10, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 69, "line": 14, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 70, "line": 14, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 71, "line": 14, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 72, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 73, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 74, "line": 14, "attr": {}, "c": []}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`;
-//const _node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 7, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 8, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 9, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 10, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 11, "line": 2, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 13, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 14, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 15, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 16, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 17, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 18, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 19, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 20, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 21, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 22, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 23, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 24, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 25, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 26, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 27, "line": 4, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 28, "line": 8, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 29, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 30, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 31, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 33, "line": 8, "attr": {}, "c": []}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`
+//const _node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "gl_Position:", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 7, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 8, "line": -1, "attr": {}, "c": []}]}, {"production": "MMult", "type": null, "value": null, "id": 9, "line": 3, "attr": {}, "c": [{"production": "MMult", "type": null, "value": null, "id": 10, "line": 3, "attr": {}, "c": [{"production": "MMult", "type": null, "value": null, "id": 11, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "u[", "id": 13, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 14, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "projMatrix:", "id": 15, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 16, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 17, "line": 3, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "mat4", "id": 18, "line": 3, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 19, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 20, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "u[", "id": 21, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 22, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "viewMatrix:", "id": 23, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 24, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 25, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "mat4", "id": 26, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 27, "line": -1, "attr": {}, "c": []}]}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 28, "line": 5, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "u[", "id": 29, "line": 5, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 30, "line": 5, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "modelMatrix:", "id": 31, "line": 5, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 33, "line": 5, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "mat4", "id": 34, "line": 5, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 35, "line": -1, "attr": {}, "c": []}]}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 36, "line": 6, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 37, "line": 6, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 38, "line": 6, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "position:", "id": 39, "line": 6, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 40, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 41, "line": 6, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 42, "line": 6, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 43, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 44, "line": 6, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 45, "line": 8, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 46, "line": 8, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 47, "line": 8, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 48, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 49, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 50, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 51, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 52, "line": 8, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 53, "line": 9, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 54, "line": 9, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 55, "line": 9, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 56, "line": 9, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 57, "line": 9, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 58, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 59, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 60, "line": 10, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 61, "line": 10, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 62, "line": 10, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 63, "line": 10, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 64, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 65, "line": 10, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 66, "line": 10, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 67, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 68, "line": 10, "attr": {}, "c": []}]}]}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 69, "line": 14, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 70, "line": 14, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 71, "line": 14, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 72, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 73, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 74, "line": 14, "attr": {}, "c": []}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`;
+const _node_data = `{"nodes": [{"production": "global_list", "type": null, "value": null, "id": 0, "line": -1, "attr": {}, "c": [{"production": "pipeline", "type": null, "value": null, "id": 1, "line": 1, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "_1997", "id": 2, "line": 1, "attr": {}, "c": []}, {"production": "component_contents", "type": null, "value": null, "id": 3, "line": -1, "attr": {}, "c": [{"production": "Gets", "type": null, "value": null, "id": 4, "line": 2, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 5, "line": 2, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "f[", "id": 6, "line": 2, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 7, "line": 2, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "f_color:", "id": 8, "line": 2, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 9, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 10, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "0", "id": 11, "line": 2, "attr": {}, "c": []}]}]}]}, {"production": "Gets", "type": null, "value": null, "id": 12, "line": 3, "attr": {}, "c": [{"production": "staged_vardecl", "type": null, "value": null, "id": 13, "line": 3, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "v[", "id": 14, "line": 3, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 15, "line": 3, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "v_color:", "id": 16, "line": 3, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 17, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 18, "line": -1, "attr": {}, "c": []}]}]}, {"production": "staged_vardecl", "type": null, "value": null, "id": 19, "line": 4, "attr": {}, "c": [{"production": null, "type": "STAGEREF", "value": "a[", "id": 20, "line": 4, "attr": {}, "c": []}, {"production": "vardecl", "type": null, "value": null, "id": 21, "line": 4, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "a_color:", "id": 22, "line": 4, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 23, "line": -1, "attr": {}, "c": [{"production": "typeref", "type": null, "value": null, "id": 24, "line": 4, "attr": {}, "c": [{"production": null, "type": "IDENT", "value": "vec4", "id": 25, "line": 4, "attr": {}, "c": []}]}]}, {"production": "index", "type": null, "value": null, "id": 26, "line": -1, "attr": {}, "c": [{"production": null, "type": "INTEGER", "value": "1", "id": 27, "line": 4, "attr": {}, "c": []}]}]}]}]}]}, {"id": "blahblahblah", "!label": "freestanding"}, {"id": "blahblahblah2", "!label": "fs2"}, {"production": "Gets", "type": null, "value": null, "id": 28, "line": 8, "attr": {}, "c": [{"production": "vardecl", "type": null, "value": null, "id": 29, "line": 8, "attr": {}, "c": [{"production": null, "type": "VARDECL", "value": "pi:", "id": 30, "line": 8, "attr": {}, "c": []}, {"production": "type", "type": null, "value": null, "id": 31, "line": -1, "attr": {}, "c": []}, {"production": "index", "type": null, "value": null, "id": 32, "line": -1, "attr": {}, "c": []}]}, {"production": null, "type": "FLOAT", "value": "3.14", "id": 33, "line": 8, "attr": {}, "c": []}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": ["production", "type"], "payload_objects": ["attr"]}`
 
 // random graphs
 //const _node_data = `{"nodes": [{"!id": 0, "!label": "WTOEAMTB", "children": [{"!id": 1, "!label": "QLKEI", "children": []}, {"!id": 2, "!label": "AJUFJREXABEVYR", "children": [{"!id": 3, "!label": "OMBTL", "children": [{"!id": 4, "!label": "BHEVDXD", "children": [{"!id": 5, "!label": "TNXVYJXRSQEP", "children": []}]}, {"!id": 6, "!label": "TKKRTNPHESO", "children": [{"!id": 7, "!label": "TTVPCFPUN", "children": [{"!id": 8, "!label": "VDHQX", "children": [{"!id": 9, "!label": "VCOTQT", "children": [{"!id": 10, "!label": "EFSNTSSVVYF", "children": [{"!id": 11, "!label": "OHJLMBCMTUFRN", "children": [{"!id": 12, "!label": "KXFWTACNPFV", "children": []}, {"!id": 13, "!label": "MDJOTOOHTO", "children": []}, {"!id": 14, "!label": "IFYQIOANGA", "children": []}, {"!id": 15, "!label": "LGRITMAFAONCU", "children": []}]}]}, {"!id": 16, "!label": "CHRIFGUYBQK", "children": [{"!id": 17, "!label": "XQLTIGFMXQNEGO", "children": []}, {"!id": 18, "!label": "KOIYCJPPJGBF", "children": [{"!id": 19, "!label": "WRVRBHDO", "children": []}]}, {"!id": 20, "!label": "IGIEQPGKU", "children": []}]}, {"!id": 21, "!label": "ADSGRHHKND", "children": [{"!id": 22, "!label": "LROVCAKXKLJDV", "children": [{"!id": 23, "!label": "ISBQKYMKDG", "children": []}, {"!id": 24, "!label": "AACVGDGX", "children": []}, {"!id": 25, "!label": "RETOOORNY", "children": []}]}, {"!id": 26, "!label": "XQCEI", "children": [{"!id": 27, "!label": "UOSXNKINKJ", "children": []}]}]}]}]}]}, {"!id": 28, "!label": "NQLVB", "children": []}, {"!id": 29, "!label": "PFVXSTCWBRDW", "children": [{"!id": 30, "!label": "BKCRKY", "children": [{"!id": 31, "!label": "MWBDWHDVMDSPX", "children": [{"!id": 32, "!label": "IJAVPIP", "children": [{"!id": 33, "!label": "RKDVK", "children": [{"!id": 34, "!label": "APEKAG", "children": []}, {"!id": 35, "!label": "WWKDEDJBY", "children": []}, {"!id": 36, "!label": "PUHKSUHBOCLAE", "children": []}, {"!id": 37, "!label": "OQMGE", "children": []}]}]}]}, {"!id": 38, "!label": "CICMRWCCQVGG", "children": [{"!id": 39, "!label": "NOSBWTPPK", "children": []}]}]}, {"!id": 40, "!label": "OQIFPJR", "children": [{"!id": 41, "!label": "MVNUEEIKYQKPXM", "children": [{"!id": 42, "!label": "CSUHUYDR", "children": [{"!id": 43, "!label": "JIKLRTFXPM", "children": [{"!id": 44, "!label": "OAREIEDKDYHN", "children": []}, {"!id": 45, "!label": "FRVJUMUPGT", "children": []}, {"!id": 46, "!label": "KXXSOGNFWASTJS", "children": []}]}, {"!id": 47, "!label": "WNUQWE", "children": [{"!id": 48, "!label": "IRDHSMWPNYF", "children": []}, {"!id": 49, "!label": "TIFPOVXO", "children": []}]}]}]}]}]}]}]}]}]}], "styles": [], "edges": [], "links": [], "label_keys": [], "payload_objects": []}`
