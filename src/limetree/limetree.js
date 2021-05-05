@@ -292,9 +292,9 @@ class LiveNode {
         this.delta = 0.0;
         this.childIdeals = new Array();
 
-        this.nodeNeighborSeparation = NaN;
-        this.minSeparationToLeftwardCousins = NaN;
-        this.minSeparationToUnrelated = NaN;
+        this.nodeNeighborSeparation = "uninitialized";
+        // this.minSeparationToLeftwardCousins = NaN;
+        // this.minSeparationToUnrelated = NaN;
 
         this.minLeftProfileSeparation = "uninitialized";
 
@@ -862,11 +862,18 @@ function minsep(a, b) {
 }
 
 function maxsep(a, b) {
+    if (a.sep == b.sep) {
+        if (a.rank < b.rank) return a;
+        return b;
+    }
+
     if (a.sep > b.sep) return a;
     return b;
 }
 
 async function _lda_layout2(node, rank_margins, profile_patches, parent_left_depth) {
+    node.left_parent_depth_at_layout = parent_left_depth; // DEBUG
+
     // patch the profile first. This only resolves any deferred move in this rank,
     // potentially passing it on to the next rank. We can't have more than one 
     // patch for a given rank, because whatever tree generated the last patch
@@ -921,16 +928,32 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         return;
     }
 
-    let claimedDepth = node.rank;
-    let minimumChildExternalSeparation = null;
+    let claimedDepth = node.child(0).maxdepth;
+
+    await _lda_layout2(node.child(0), rank_margins, profile_patches, claimedDepth);
+
+    let minimumChildExternalSeparation = node.child(0).minLeftProfileSeparation;
 
     // strict postorder assured by laying out children before touching any of our own node's layout.
-    for (let e of node.children) {
-        let c = e.target;
+    for (let i = 1; i < node.count(); i++) {
+        let c = node.child(i);
         await _lda_layout2(c, rank_margins, profile_patches, claimedDepth);
 
+        // does the child profile's minimum distance come from outside what we've claimed so far?
         if (c.minLeftProfileSeparation.rank > claimedDepth) {
-            minimumChildExternalSeparation = c.minLeftProfileSeparation;
+            let slipDistance = c.minLeftProfileSeparation.sep;
+            if (slipDistance > 0) {
+                console.log("contraction", c.label, c.id, slipDistance);
+                //move_tree_deferred(c, -slipDistance);
+                //await debug_step(); // DEBUG
+                //profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
+                //c.minLeftProfileSeparation.sep -= slipDistance;
+            }
+            minimumChildExternalSeparation = minsep(c.minLeftProfileSeparation, minimumChildExternalSeparation);
+        }
+
+        if (c.maxdepth > claimedDepth) {
+            claimedDepth = c.maxdepth;
         }
     }
 
@@ -939,6 +962,10 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
 
     node.x = midpoint; // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
     let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
+
+    node.nodeNeighborSeparation = ranksep(node.rank, centeringSeparation + marginSeparation);
+    node.minLeftProfileSeparation = minsep(node.nodeNeighborSeparation, minimumChildExternalSeparation);
+
     rank_margins[node.rank] = node.x + node.boxwidth;
 
     if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
@@ -1727,12 +1754,13 @@ var _displayed_node = null;
 
 var layout_obj = function(parent_div, name, o, extra) {
     let tbl = document.createElement("table");
+    tbl.style = 'width:100%';
     parent_div.appendChild(tbl);
     
     let title = tbl.insertRow();
     let titleCell = title.insertCell();
     titleCell.innerHTML = name;
-    titleCell.style = 'text-align:center';
+    titleCell.style = 'text-align:center;font-weight:bold';
     titleCell.setAttribute("colspan", "2");
 
     if (extra) {
@@ -1746,6 +1774,7 @@ var layout_obj = function(parent_div, name, o, extra) {
             continue;
         }
         let name = r.insertCell();
+        name.style = 'font-weight:bold;text-align:left';
         let value = r.insertCell();
         name.innerHTML = pk;
         value.innerHTML = o[pk];
@@ -1776,9 +1805,8 @@ var set_node_data = function(n) {
         "x" : n.x,
         "delta" : n.delta,
         "left sep" : n.nodeNeighborSeparation,
-        "cousin sep" : n.minSeparationToLeftwardCousins,
         "rank" : n.rank,
-        "unrelated sep" : n.minSeparationToUnrelated,
+        "unrelated sep" : n.minLeftProfileSeparation,
         "parent wave" : n.left_parent_depth_at_layout,
         //"left sibling depth" : n.left_sib_debug_depth
     };
