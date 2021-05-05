@@ -297,6 +297,7 @@ class LiveNode {
         // this.minSeparationToUnrelated = NaN;
 
         this.minLeftProfileSeparation = "uninitialized";
+        this.minSeparationFromLeftSiblingSubtree = "uninitialized";
 
         this.leftEdgeByRank = new Array(); // int -> RANK ORDER
         this.rightEdgeByRank = new Array(); // int -> RANK ORDER
@@ -908,6 +909,7 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
     if (node.leaf()) {
         node.nodeNeighborSeparation = ranksep(node.rank, marginSeparation);
         node.minLeftProfileSeparation = ranksep(node.rank, marginSeparation);
+        node.minSeparationFromLeftSiblingSubtree = ranksep(node.rank, marginSeparation);
 
         // set the node's position and advance the margin by the node's width
         node.x = rank_margins[node.rank];
@@ -944,10 +946,11 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
             await debug_step(); // DEBUG
             profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
             c.minLeftProfileSeparation.sep -= slipDistance; // note that we've driven it to zero.
+            //c.minSeparationFromLeftSiblingSubtree.sep -= slipDistance;
         }
         
         if (c.minLeftProfileSeparation.rank > claimedDepth) {
-            // I think this is right. We've butted some part of our subtree up against the external amount.
+            // I think this is right. We've butted some part of our subtree up against something already laid out.
             // Since our minimum left profile separation was driven to zero above, this will
             // set our maximum separation from the external subtrees to zero... which is right.
             minimumChildExternalSeparation = c.minLeftProfileSeparation; 
