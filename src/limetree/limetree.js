@@ -934,25 +934,21 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         let c = node.child(i);
         await _lda_layout(c, rank_margins, profile_patches, claimedDepth, node.child(i - 1).maxdepth);
         
-        let slipDistance = c.minSeparationToUnrelated;
-        if (slipDistance > 0) {
-            console.log("contraction");
-            move_tree_deferred(c, -slipDistance);
-            await debug_step(); // DEBUG
-            //c.minSeparationToLeftwardCousins -= slipDistance;
-            profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
+        if (c.minSeparationToUnrelated != null) {
+            let slipDistance = c.minSeparationToUnrelated;
+            if (slipDistance > 0) {
+                console.log("contraction");
+                move_tree_deferred(c, -slipDistance);
+                await debug_step(); // DEBUG
+                profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
+            }
         }
 
-        // if (c.minSeparationToLeftwardCousins > 0) { // unglue
-        //     for (let j = i - 1; j > 0; j--) { // move only internal nodes, not either side.
-        //         let leftChild = node.child(j);
-        //         let rightMove = Math.min(node.child(j + 1).minSeparationToLeftwardCousins, node.childIdeals[leftChild.sib_index]);
-        //         move_tree_deferred(leftChild, rightMove);
-        //         leftChild.minSeparationToLeftwardCousins += rightMove;
-        //     }
-        // }
-
         if (c.maxdepth > claimedDepth) claimedDepth = c.maxdepth;
+    }
+
+    if (minProfileDistanceToUnrelated == null) {
+        minProfileDistanceToUnrelated = 0;
     }
 
     node.leftProfile = Array.from(rank_margins); // DEBUG
