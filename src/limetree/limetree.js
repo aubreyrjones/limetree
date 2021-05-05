@@ -942,6 +942,7 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
                 await debug_step(); // DEBUG
                 profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
             }
+            if (minProfileDistanceToUnrelated == null) minProfileDistanceToUnrelated = c.minProfileDistanceToUnrelated 
         }
 
         if (c.maxdepth > claimedDepth) claimedDepth = c.maxdepth;
