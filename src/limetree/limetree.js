@@ -37,7 +37,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(200);
+    return sleep(10);
 }
 
 var finishedLayout = false;
@@ -862,11 +862,6 @@ function minsep(a, b) {
 }
 
 function maxsep(a, b) {
-    if (a.sep == b.sep) {
-        if (a.rank < b.rank) return a;
-        return b;
-    }
-
     if (a.sep > b.sep) return a;
     return b;
 }
@@ -928,10 +923,13 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         return;
     }
 
+    // we're going to first lay out the left child, as it will always be up against some
+    // correct part of the tree, and cannot slip leftward relative to this node.
     let claimedDepth = node.child(0).maxdepth;
-
     await _lda_layout2(node.child(0), rank_margins, profile_patches, claimedDepth);
 
+    // this cannot simply be 0, as it's possible the external separation on the child
+    // is "infinite".
     let minimumChildExternalSeparation = node.child(0).minLeftProfileSeparation;
 
     // strict postorder assured by laying out children before touching any of our own node's layout.
@@ -939,19 +937,22 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         let c = node.child(i);
         await _lda_layout2(c, rank_margins, profile_patches, claimedDepth);
 
-        // does the child profile's minimum distance come from outside what we've claimed so far?
-        if (c.minLeftProfileSeparation.rank > claimedDepth) {
-            let slipDistance = c.minLeftProfileSeparation.sep;
-            if (slipDistance > 0) {
-                console.log("contraction", c.label, c.id, slipDistance);
-                //move_tree_deferred(c, -slipDistance);
-                //await debug_step(); // DEBUG
-                //profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
-                //c.minLeftProfileSeparation.sep -= slipDistance;
-            }
-            minimumChildExternalSeparation = minsep(c.minLeftProfileSeparation, minimumChildExternalSeparation);
+        let slipDistance = c.minLeftProfileSeparation.sep;
+        if (slipDistance > 0) {
+            console.log("contraction", c.label, c.id, slipDistance);
+            move_tree_deferred(c, -slipDistance);
+            await debug_step(); // DEBUG
+            profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
+            c.minLeftProfileSeparation.sep -= slipDistance; // note that we've driven it to zero.
         }
-
+        
+        if (c.minLeftProfileSeparation.rank > claimedDepth) {
+            // I think this is right. We've butted some part of our subtree up against the external amount.
+            // Since our minimum left profile separation was driven to zero above, this will
+            // set our maximum separation from the external subtrees to zero... which is right.
+            minimumChildExternalSeparation = c.minLeftProfileSeparation; 
+        }
+        
         if (c.maxdepth > claimedDepth) {
             claimedDepth = c.maxdepth;
         }
@@ -1802,11 +1803,12 @@ var set_node_data = function(n) {
     let info_div = document.getElementById("node_info");
     info_div.innerText = "";
     let extra = {
+        "id" : n.id,
         "x" : n.x,
         "delta" : n.delta,
         "left sep" : n.nodeNeighborSeparation,
         "rank" : n.rank,
-        "unrelated sep" : n.minLeftProfileSeparation,
+        "min left profile sep" : n.minLeftProfileSeparation,
         "parent wave" : n.left_parent_depth_at_layout,
         //"left sibling depth" : n.left_sib_debug_depth
     };
