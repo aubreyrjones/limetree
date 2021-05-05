@@ -948,24 +948,17 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         if (c.minSeparationToUnrelated != null) {
             let slipDistance = c.minSeparationToUnrelated.sep;
 
-            if (unrelatedSep == null) {
-                console.log("was null", c.minSeparationToUnrelated);
-                unrelatedSep = c.minSeparationToUnrelated;
-            }
-            else {
-                console.log("not null", unrelatedSep, c.minSeparationToUnrelated);
-            }
-
             if (slipDistance > 0) {
                 console.log("contraction");
                 move_tree_deferred(c, -slipDistance);
                 await debug_step(); // DEBUG
                 profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
-                unrelatedSep.sep -= slipDistance;
                 c.minSeparationToUnrelated.sep -= slipDistance;
             }
 
-            unrelatedSep = maxsep(unrelatedSep, c.minSeparationToUnrelated);
+            if (unrelatedSep == null) {
+                unrelatedSep = c.minSeparationToUnrelated;
+            }
         }
 
         if (c.maxdepth > claimedDepth) claimedDepth = c.maxdepth;
@@ -985,18 +978,18 @@ async function _lda_layout(node, rank_margins, profile_patches, parent_left_dept
         rank_margins[node.rank] += W_SEPARATION;
     }
 
-    node.nodeNeighborSeparation = marginSeparation + centeringSeparation; //Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
+    node.nodeNeighborSeparation = Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
 
     if (unrelatedSep != null) {
         // we had a leftward neighbor of higher rank than our parents' processed subchildren, so find the minimum amount we could move
-        console.log("not null at end", node.label, node.id, unrelatedSep);
+        //console.log("not null at end", node.label, node.id, unrelatedSep);
         node.minSeparationToUnrelated = minsep(ranksep(node.rank, node.nodeNeighborSeparation), unrelatedSep);
     }
     else {
         // we never had any leftward neighborship with our parents' external nodes.
         // so we actually can't move anywhere.
-        console.log("null at end", node.label, node.id);
-        node.minSeparationToUnrelated = ranksep(node.rank, 0); //ranksep(node.rank, node.nodeNeighborSeparation); //ranksep(node.rank, node.nodeNeighborSeparation);
+        //console.log("null at end", node.label, node.id);
+        node.minSeparationToUnrelated = ranksep(node.rank, 0);
     }
 
     //node.minSeparationToUnrelated = ranksep(node.rank, Math.min(node.nodeNeighborSeparation, minProfileDistanceToUnrelated));
@@ -1671,7 +1664,7 @@ var set_node_data = function(n) {
         "rank" : n.rank,
         "unrelated sep" : n.minSeparationToUnrelated,
         "parent wave" : n.left_parent_depth_at_layout,
-        "left sibling depth" : n.left_sib_debug_depth
+        //"left sibling depth" : n.left_sib_debug_depth
     };
     // let extra = {
     //     "delta" : n.delta, 
