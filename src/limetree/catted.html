@@ -953,9 +953,9 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
 
     // we're going to first lay out the left child, as it will always be up against some
     // correct part of the tree, and cannot slip leftward relative to this node.
-    let claimedDepth = node.rank;
-    await _lda_layout2(node.child(0), rank_margins, profile_patches, claimedDepth, left_neighbor_subtree_depth);
-    claimedDepth = node.child(0).maxdepth;
+    //let claimedDepth = node.rank;
+    await _lda_layout2(node.child(0), rank_margins, profile_patches, node.rank, left_neighbor_subtree_depth);
+    let claimedDepth = node.child(0).maxdepth;
 
     // this cannot simply be 0, as it's possible the external separation on the child
     // is "infinite".
@@ -1024,7 +1024,7 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
             }
         }
         
-        if (c.minLeftProfileSeparation.rank > claimedDepth) {
+        if (c.minLeftProfileSeparation.rank >= claimedDepth) {
             // I think this is right. We've butted some part of our subtree up against something already laid out.
             // Since our minimum left profile separation was driven to zero above, this will
             // set our maximum separation from the external subtrees to zero... which is right.
