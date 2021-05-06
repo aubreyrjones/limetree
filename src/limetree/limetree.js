@@ -975,6 +975,11 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         }
     }
 
+    // iterate interior nodes in reverse
+    for (let i = node.count() - 1; i > 0; i--) {
+        let rightSeparation = node.child(i + 1).minSeparationFromLeftSiblingSubtree;
+    }
+
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
     midpoint -= node.halfw();
 
