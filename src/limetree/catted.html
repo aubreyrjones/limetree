@@ -45,7 +45,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(10);
+    return sleep(100);
 }
 
 var finishedLayout = false;
@@ -55,8 +55,8 @@ const exrp = p => (1.5**p) * (0.15 ** (1 - p));
 const RANK_SEPARATION = 80.0;
 const BOX_W_MARGIN = 4;
 
-const W_SEPARATION = 10;
-const SUBTREE_W_SEPARATION = 20;
+const W_SEPARATION = 0;
+const SUBTREE_W_SEPARATION = 0;
 const SUBTREE_W_GEOMETRIC_FACTOR = 1;
 
 const BOX_TOP_OFFSET = 26;
@@ -929,6 +929,13 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
             node.minSeparationFromLeftSiblingSubtree = ranksep(node.rank, 123123123123);
         }
 
+        if (node.rank <= parent_left_depth) {
+            node.minSeparationFromCousin = ranksep(node.rank, marginSeparation);
+        }
+        else {
+            node.minSeparationFromCousin = ranksep(node.rank, 858585858585);
+        }
+
         // set the node's position and advance the margin by the node's width
         node.x = rank_margins[node.rank];
         rank_margins[node.rank] += node.boxwidth;
@@ -946,13 +953,15 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
 
     // we're going to first lay out the left child, as it will always be up against some
     // correct part of the tree, and cannot slip leftward relative to this node.
-    let claimedDepth = node.child(0).maxdepth;
+    let claimedDepth = node.rank;
     await _lda_layout2(node.child(0), rank_margins, profile_patches, claimedDepth, left_neighbor_subtree_depth);
+    claimedDepth = node.child(0).maxdepth;
 
     // this cannot simply be 0, as it's possible the external separation on the child
     // is "infinite".
     let minimumChildExternalSeparation = node.child(0).minLeftProfileSeparation;
     let minimumThisNodeNeighborTreeSeparation = node.child(0).minSeparationFromLeftSiblingSubtree;
+    let minimumThisNodeCousinSeparation = node.child(0).minSeparationFromCousin;
 
     // strict postorder assured by laying out children before touching any of our own node's layout.
     for (let i = 1; i < node.count(); i++) {
@@ -971,7 +980,7 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
 
         // do we need to relax leftward nodes?
         if (c.minSeparationFromLeftSiblingSubtree.sep > 0) {
-            console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep);
+            console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep, c.minSeparationFromCousin.sep);
             let supportingChild = null;
             
             for (let j = i - 1; j >= 0; j--) {
@@ -985,9 +994,9 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
             let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
 
             if (supportingChild == null) {
-                // for (let j = 0; j < c.sib_index; j++) {
-                //     move_tree_deferred(node.child(j), internalSpace);
-                // }
+                for (let j = 0; j < c.sib_index; j++) {
+                    move_tree_deferred(node.child(j), internalSpace);
+                }
             }
             else {
                 // node.child(supportingChild.sib_index + 1);
@@ -1028,6 +1037,9 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
                 minimumThisNodeNeighborTreeSeparation = c.minLeftProfileSeparation;
             }
         }
+        else {
+            minimumThisNodeCousinSeparation = c.minSeparationFromCousin;
+        }
         
         if (c.maxdepth > claimedDepth) {
             claimedDepth = c.maxdepth;
@@ -1045,6 +1057,10 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
 
     if (node.rank <= left_neighbor_subtree_depth) {
         node.minSeparationFromLeftSiblingSubtree = minsep(minimumThisNodeNeighborTreeSeparation, node.nodeNeighborSeparation);
+    }
+
+    if (node.rank <= parent_left_depth) {
+        node.minSeparationFromCousin = node.nodeNeighborSeparation; //minsep(minimumThisNodeCousinSeparation, node.nodeNeighborSeparation);
     }
 
     rank_margins[node.rank] = node.x + node.boxwidth;
@@ -1890,6 +1906,7 @@ var set_node_data = function(n) {
         "rank" : n.rank,
         "min left profile sep" : n.minLeftProfileSeparation,
         "min left subtree sep" : n.minSeparationFromLeftSiblingSubtree,
+        "min left cousin sep" : n.minSeparationFromCousin,
         "parent wave" : n.left_parent_depth_at_layout,
         //"left sibling depth" : n.left_sib_debug_depth
     };
