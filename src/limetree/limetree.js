@@ -37,18 +37,18 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(200);
+    return sleep(80);
 }
 
 var finishedLayout = false;
 
 const exrp = p => (1.5**p) * (0.15 ** (1 - p));
 
-const RANK_SEPARATION = 60.0;
+const RANK_SEPARATION = 180.0;
 const BOX_W_MARGIN = 4;
 
-const W_SEPARATION = 5;
-const SUBTREE_W_SEPARATION = 10;
+const W_SEPARATION = 10;
+const SUBTREE_W_SEPARATION = 20;
 const SUBTREE_W_GEOMETRIC_FACTOR = 1;
 
 const BOX_TOP_OFFSET = 26;
@@ -964,9 +964,9 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         // do we need to relax leftward nodes?
         if (c.minSeparationFromLeftSiblingSubtree.sep > 0) {
             console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep);
-            let supportingChild = node.child(0);
+            let supportingChild = null;
             
-            for (let j = i - 1; j > 0; j--) {
+            for (let j = i - 1; j >= 0; j--) {
                 let supportSearch = node.child(j);
                 if (supportSearch.maxdepth >= c.minLeftProfileSeparation.rank) {
                     supportingChild = supportSearch;
@@ -974,26 +974,34 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
                     break;
                 }
             }
-            
-            let firstMovingSibling = node.child(supportingChild.sib_index + 1);//(supportingChild == null) ? node.child(0) : node.child(supportingChild.sib_index + 1);
-            console.log("first moving sibling for is", c.label, c.id, firstMovingSibling.label, firstMovingSibling.id);
-            
-            let innerCount = c.sib_index - firstMovingSibling.sib_index;
+            let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
 
-            if (innerCount > 0) {
-                let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
-                let portion = internalSpace / (innerCount + 1);
+            if (supportingChild == null) {
+                for (let j = 0; j < c.sib_index; j++) {
+                    move_tree_deferred(node.child(j), internalSpace);
+                }
+            }
+            else {
+                // node.child(supportingChild.sib_index + 1);
+                let firstMovingSibling = node.child(supportingChild.sib_index + 1);
+                console.log("first moving sibling for is", c.label, c.id, firstMovingSibling.label, firstMovingSibling.id);
                 
-                console.log("internal space for", internalSpace, innerCount);
+                let innerCount = c.sib_index - firstMovingSibling.sib_index;
 
-                let moveCounter = 0;
-                for (let j = firstMovingSibling.sib_index; j < c.sib_index; j++) {
-                    let relaxingChild = node.child(j);
-                    console.log("moving right by", relaxingChild.label, internalSpace);
-                    moveCounter += portion;
-                    move_tree_deferred(relaxingChild, moveCounter);
-                    if (relaxingChild.maxdepth > c.maxdepth) {
-                        profile_patches[relaxingChild.maxdepth - c.maxdepth] = make_patch(moveCounter, relaxingChild.maxdepth);
+                if (innerCount > 0) {
+                    let portion = internalSpace / (innerCount + 1);
+                    
+                    console.log("internal space for", internalSpace, innerCount);
+
+                    let moveCounter = 0;
+                    for (let j = firstMovingSibling.sib_index; j < c.sib_index; j++) {
+                        let relaxingChild = node.child(j);
+                        console.log("moving right by", relaxingChild.label, internalSpace);
+                        moveCounter += portion;
+                        move_tree_deferred(relaxingChild, moveCounter);
+                        if (relaxingChild.maxdepth > c.maxdepth) {
+                            profile_patches[relaxingChild.maxdepth - c.maxdepth] = make_patch(moveCounter, relaxingChild.maxdepth);
+                        }
                     }
                 }
             }
