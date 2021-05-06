@@ -972,14 +972,20 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
                 }
             }
             
-            let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;//c.x - supportingChild.laidOutRightMargin;
             let innerCount = c.sib_index - supportingChild.sib_index - 1;
-            let increment = internalSpace / (innerCount + 1);
-            console.log("internal space for", internalSpace, innerCount);
 
-            for (let j = i - 1; j > supportingChild.sib_index; j--) {
-                console.log("moving right by", internalSpace);
-                move_tree_deferred(node.child(j), internalSpace);
+            if (innerCount > 0) {
+                let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
+                let portion = internalSpace / (innerCount + 1);
+                
+                console.log("internal space for", internalSpace, innerCount);
+
+                let moveCounter = 0;
+                for (let j = supportingChild.sib_index + 1; j < c.sib_index; j++) {
+                    console.log("moving right by", node.child(j).label, internalSpace);
+                    moveCounter += portion;
+                    move_tree_deferred(node.child(j), moveCounter);
+                }
             }
         }
         
