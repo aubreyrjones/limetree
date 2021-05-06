@@ -37,7 +37,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(100);
+    return sleep(250);
 }
 
 var finishedLayout = false;
@@ -872,9 +872,147 @@ function maxsep(a, b) {
 }
 
 
-async function _lda_layout3(node, rank_margins, profile_patches, parent_left_depth) {
-    
+async function _lda_layout3(node, rank_margins, profile_patches, parent_left_depth, left_depth) {
+    node.left_parent_depth_at_layout = parent_left_depth; // DEBUG
+
+    // patch the profile first. This only resolves any deferred move in this rank,
+    // potentially passing it on to the next rank. We can't have more than one 
+    // patch for a given rank, because whatever tree generated the last patch
+    // must have resolved the prior one as it was laying out.
+    if (profile_patches[node.rank] != null) {
+        let patch = profile_patches[node.rank];
+        rank_margins[node.rank] += patch.delta;
+        if (patch.stop != node.rank) {
+            profile_patches[node.rank + 1] = patch;
+        }
+        profile_patches[node.rank] = null;
+    }
+
+    // Measure and adjust the left margins, getting the offset from where they originally were.
+    let marginSeparation;
+    if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
+        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin    
+
+        if (rank_margins[node.rank] == null) { // virgin rank
+            rank_margins[node.rank] = nextStart; // just set the ideal as the margin
+
+            marginSeparation = 1000000; //there's no left margin, we could move leftward infinitely.
+        }
+        else { // there's something to the left
+            let startMargin = rank_margins[node.rank];
+            rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart); // either the ideal spot, or as far leftward as allowed by current rank margin.
+            marginSeparation = rank_margins[node.rank] - startMargin; // we could move leftward to butt up against our leftward neighbor.
+        }
+    }
+    else if(node.rank > 0 && node.sib_index > 0) {
+        // if we're a sibling and a leaf, we're going to be laid out absolutely and correctly the first time based on the default margin.
+        // we cannot move leftward toward our immediate sibling
+        // if we're not a leaf, we'll deal with it later on.
+        marginSeparation = 0;
+    }
+
+    if (node.leaf()) {
+        node.nodeNeighborSeparation = ranksep(node.rank, marginSeparation);
+        node.minLeftProfileSeparation = ranksep(node.rank, marginSeparation);
+
+        if (node.rank <= parent_left_depth) {
+            node.minSeparationFromCousin = ranksep(node.rank, marginSeparation);
+        }
+        else {
+            node.minSeparationFromCousin = ranksep(node.rank, 858585858585);
+        }
+
+        // set the node's position and advance the margin by the node's width
+        node.x = rank_margins[node.rank];
+        rank_margins[node.rank] += node.boxwidth;
+        // add inter-node spacing.
+        if (node.parent && node.sib_index == node.parent.count() - 1) {
+            rank_margins[node.rank] += SUBTREE_W_SEPARATION;
+        }
+        else {
+            rank_margins[node.rank] += W_SEPARATION;
+        }
+        node.laidOutRightMargin = rank_margins[node.rank];
+        await debug_step(); // DEBUG
+        return;
+    }
+
+    await _lda_layout3(node.child(0), rank_margins, profile_patches, parent_left_depth, node.rank);
+    let claimedDepth = node.child(0).maxdepth;
+    let minimumSubtreeSeparation = node.child(0).minLeftProfileSeparation;
+    let subtreeCousinSeparation = node.child(0).minSeparationFromCousin;
+
+    for (let i = 1; i < node.count(); i++) {
+        let c = node.child(i);
+        await _lda_layout3(c, rank_margins, profile_patches, claimedDepth);
+
+        let slipDistance = c.minLeftProfileSeparation.sep;
+        // if (c.minLeftProfileSeparation.sep > 0) {
+        //     console.log("contraction", c.label, c.id, slipDistance);
+        //     move_tree_deferred(c, -slipDistance);
+        //     await debug_step(); // DEBUG
+        //     profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
+        //     c.minLeftProfileSeparation.sep -= slipDistance; // note that we've driven it to zero.
+        //     c.minSeparationFromCousin.sep -= slipDistance; // this maybe not.
+        // }
+
+        if (c.minLeftProfileSeparation.rank > claimedDepth) {
+            minimumSubtreeSeparation = minsep(minimumSubtreeSeparation, c.minLeftProfileSeparation);
+
+            if (c.minLeftProfileSeparation.rank >= parent_left_depth) {
+                subtreeCousinSeparation = minsep(subtreeCousinSeparation, c.minLeftProfileSeparation);
+            }
+        }
+
+        if (c.maxdepth > claimedDepth) {
+            claimedDepth = c.maxdepth;
+        }
+    }
+
+    let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
+    midpoint -= node.halfw();
+
+    node.x = midpoint; // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
+    let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
+
+    node.nodeNeighborSeparation = ranksep(node.rank, centeringSeparation + marginSeparation);
+    node.minLeftProfileSeparation = minsep(minimumSubtreeSeparation, node.nodeNeighborSeparation);
+    node.minSeparationFromCousin = minsep(subtreeCousinSeparation, node.nodeNeighborSeparation);
+
+    rank_margins[node.rank] = node.x + node.boxwidth;
+    if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
+        rank_margins[node.rank] += SUBTREE_W_SEPARATION;
+    }
+    else {
+        rank_margins[node.rank] += W_SEPARATION;
+    }
+    node.laidOutRightMargin = rank_margins[node.rank];
+
+    await debug_step(); // DEBUG
+    if (node.label == 'VODXSE') undefined();
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1102,31 +1240,6 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth, left_sibling_depth) {
     //node.rightProfile = Array.from(rank_margins); // DEBUG
 
@@ -1276,7 +1389,7 @@ async function layout_tree(root) {
         rank_margins[i] = null;
         patch_array.push(null);
     }
-    await _lda_layout2(root, rank_margins, patch_array, 0, 0);
+    await _lda_layout3(root, rank_margins, patch_array, 0, 0);
     //await _lda_skew_tree(root, 0);
 
     let after = Date.now();
@@ -1928,7 +2041,7 @@ var set_node_data = function(n) {
         "left sep" : n.nodeNeighborSeparation,
         "rank" : n.rank,
         "min left profile sep" : n.minLeftProfileSeparation,
-        "min left subtree sep" : n.minSeparationFromLeftSiblingSubtree,
+        //"min left subtree sep" : n.minSeparationFromLeftSiblingSubtree,
         "min left cousin sep" : n.minSeparationFromCousin,
         "parent wave" : n.left_parent_depth_at_layout,
         //"left sibling depth" : n.left_sib_debug_depth
