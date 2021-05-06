@@ -1018,8 +1018,13 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
                 break; // break the outer loop, we're done with all children
             }
             else {
+                let innerCount = i - supportingIndex - 1;
+                let portion = rightSlipDistance / (innerCount + 1)
+
+                let moveCounter = portion;
                 for (let j = supportingIndex + 1; j < i; j++) {
-                    move_tree_deferred(node.child(j), rightSlipDistance);
+                    move_tree_deferred(node.child(j), moveCounter);
+                    moveCounter += portion;
                     await debug_step(); // DEBUG
                 }
                 i = supportingIndex - 1;
