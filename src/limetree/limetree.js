@@ -37,7 +37,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(80);
+    return sleep(150);
 }
 
 var finishedLayout = false;
@@ -298,6 +298,7 @@ class LiveNode {
 
         this.minLeftProfileSeparation = "uninitialized";
         this.minSeparationFromLeftSiblingSubtree = "uninitialized";
+        this.laidOutRightMargin = "uninitialized";
 
         this.leftEdgeByRank = new Array(); // int -> RANK ORDER
         this.rightEdgeByRank = new Array(); // int -> RANK ORDER
@@ -836,6 +837,7 @@ async function _lda_skew_tree(node, parent_skew) {
 var move_tree_deferred = function(root, amount) {
     //root.delta += amount; // this doesn't work with the profile caching
     root.x += amount;
+    root.laidOutRightMargin += amount;
 
     for (let e of root.children) {
         e.target.delta += amount;
@@ -927,6 +929,7 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         else {
             rank_margins[node.rank] += W_SEPARATION;
         }
+        node.laidOutRightMargin = rank_margins[node.rank];
         await debug_step(); // DEBUG
         return;
     }
@@ -953,7 +956,31 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
             await debug_step(); // DEBUG
             profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
             c.minLeftProfileSeparation.sep -= slipDistance; // note that we've driven it to zero.
-            //c.minSeparationFromLeftSiblingSubtree.sep -= slipDistance;
+            c.minSeparationFromLeftSiblingSubtree.sep -= slipDistance;
+        }
+
+        // do we need to relax leftward nodes?
+        if (c.minSeparationFromLeftSiblingSubtree.sep > 0) {
+            console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep);
+            let supportingChild = node.child(0);
+            
+            for (let j = i - 1; j > 0; j--) {
+                let supportSearch = node.child(j);
+                if (supportSearch.maxdepth >= c.maxdepth) {
+                    supportingChild = supportSearch;
+                    break;
+                }
+            }
+            
+            let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;//c.x - supportingChild.laidOutRightMargin;
+            let innerCount = c.sib_index - supportingChild.sib_index - 1;
+            let increment = internalSpace / (innerCount + 1);
+            console.log("internal space for", internalSpace, innerCount);
+
+            for (let j = i - 1; j > supportingChild.sib_index; j--) {
+                console.log("moving right by", internalSpace);
+                move_tree_deferred(node.child(j), internalSpace);
+            }
         }
         
         if (c.minLeftProfileSeparation.rank > claimedDepth) {
@@ -975,11 +1002,6 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
         }
     }
 
-    // iterate interior nodes in reverse
-    for (let i = node.count() - 1; i > 0; i--) {
-        let rightSeparation = node.child(i + 1).minSeparationFromLeftSiblingSubtree;
-    }
-
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
     midpoint -= node.halfw();
 
@@ -994,13 +1016,13 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
     }
 
     rank_margins[node.rank] = node.x + node.boxwidth;
-
     if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
         rank_margins[node.rank] += SUBTREE_W_SEPARATION;
     }
     else {
         rank_margins[node.rank] += W_SEPARATION;
     }
+    node.laidOutRightMargin = rank_margins[node.rank];
 
     await debug_step(); // DEBUG
 }
