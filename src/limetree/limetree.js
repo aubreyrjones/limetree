@@ -978,8 +978,8 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
                 await debug_step(); // DEBUG
                 profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
                 c.nodeNeighborSeparation.sep -= slipDistance;
-                //c.minLeftProfileSeparation.sep -= slipDistance;
-
+                c.minLeftProfileSeparation.sep -= slipDistance;
+               
                 if (c.minLeftProfileSeparation.rank > node.child(i - 1).maxdepth) {
                     c.minSubtreeSeparation.sep -= slipDistance;
                 }
@@ -993,7 +993,7 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
             // or some part of it. Or it's the same zero as everything else because some subtree is hung up on the laid out ndoes.
             // either this is already laid out correctly with zero slippage or
             // we used up all the space by slipping and it's zero, or there's some left. Either way, it's still the deepest minimum profile for this node.
-            c.minLeftProfileSeparation = copysep(c.minSubtreeSeparation);
+            c.minLeftProfileSeparation = minsep(c.minSubtreeSeparation, c.minLeftProfileSeparation); //copysep(c.minSubtreeSeparation);
         }
 
         // depth filters.
@@ -1015,35 +1015,35 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
     }
 
     // start with the last node, skip the first node.
-    // for (let i = node.count() - 1; i > 0; i--) {
-    //     let c = node.child(i);
-    //     if (c.minLeftProfileSeparation.rank > c.minSeparationFromLeftSiblingSubtree.rank) { // this node should let everything move right.
-    //         let supportingIndex = find_supporting(node, c);
-    //         let rightSlipDistance = c.minSeparationFromLeftSiblingSubtree.sep;
-    //         console.log("moving right because with support", c.label, c.id, rightSlipDistance, supportingIndex);
-    //         if (supportingIndex < 0) { // move everybody who's left of here.
-    //             for (let j = 0; j < i; j++) {
-    //                 rightSlipDistance = Math.min(rightSlipDistance, c.minSeparationFromCousin.sep);
-    //                 move_tree_deferred(node.child(j), rightSlipDistance);
-    //                 await debug_step(); // DEBUG
-    //             }
+    for (let i = node.count() - 1; i > 0; i--) {
+        let c = node.child(i);
+        if (c.minLeftProfileSeparation.rank > c.minSeparationFromLeftSiblingSubtree.rank) { // this node should let everything move right.
+            let supportingIndex = find_supporting(node, c);
+            let rightSlipDistance = c.minSeparationFromLeftSiblingSubtree.sep;
+            console.log("moving right because with support", c.label, c.id, rightSlipDistance, supportingIndex);
+            if (supportingIndex < 0) { // move everybody who's left of here.
+                for (let j = 0; j < i; j++) {
+                    rightSlipDistance = Math.min(rightSlipDistance, c.minSeparationFromCousin.sep);
+                    move_tree_deferred(node.child(j), rightSlipDistance);
+                    await debug_step(); // DEBUG
+                }
 
-    //             break; // break the outer loop, we're done with all children
-    //         }
-    //         else {
-    //             let innerCount = i - supportingIndex - 1;
-    //             let portion = rightSlipDistance / (innerCount + 1)
+                break; // break the outer loop, we're done with all children
+            }
+            else {
+                let innerCount = i - supportingIndex - 1;
+                let portion = rightSlipDistance / (innerCount + 1)
 
-    //             let moveCounter = portion;
-    //             for (let j = supportingIndex + 1; j < i; j++) {
-    //                 move_tree_deferred(node.child(j), moveCounter);
-    //                 moveCounter += portion;
-    //                 await debug_step(); // DEBUG
-    //             }
-    //             i = supportingIndex - 1;
-    //         }
-    //     }
-    // }
+                let moveCounter = portion;
+                for (let j = supportingIndex + 1; j < i; j++) {
+                    move_tree_deferred(node.child(j), moveCounter);
+                    moveCounter += portion;
+                    await debug_step(); // DEBUG
+                }
+                i = supportingIndex - 1;
+            }
+        }
+    }
 
 
 
