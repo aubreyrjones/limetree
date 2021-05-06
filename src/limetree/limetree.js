@@ -37,7 +37,7 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(40);
+    return sleep(100);
 }
 
 var finishedLayout = false;
@@ -871,6 +871,34 @@ function maxsep(a, b) {
     return b;
 }
 
+
+async function _lda_layout3(node, rank_margins, profile_patches, parent_left_depth) {
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 async function _lda_layout2(node, rank_margins, profile_patches, parent_left_depth, left_neighbor_subtree_depth) {
     node.left_parent_depth_at_layout = parent_left_depth; // DEBUG
 
@@ -946,7 +974,7 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
     // we're going to first lay out the left child, as it will always be up against some
     // correct part of the tree, and cannot slip leftward relative to this node.
     //let claimedDepth = node.rank;
-    await _lda_layout2(node.child(0), rank_margins, profile_patches, parent_left_depth, left_neighbor_subtree_depth);
+    await _lda_layout2(node.child(0), rank_margins, profile_patches, node.rank, left_neighbor_subtree_depth);
     let claimedDepth = node.child(0).maxdepth;
 
     // this cannot simply be 0, as it's possible the external separation on the child
@@ -971,59 +999,59 @@ async function _lda_layout2(node, rank_margins, profile_patches, parent_left_dep
             c.minSeparationFromCousin.sep -= slipDistance;
         }
 
-        if (c.label == 'MEILPG') undefined();
+        if (c.label == 'VODXSE') undefined();
 
-        // do we need to relax leftward nodes?
-        if (c.minSeparationFromLeftSiblingSubtree.sep > 0) {
-            console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep, c.minSeparationFromCousin.sep);
-            let supportingChild = null;
+        // // do we need to relax leftward nodes?
+        // if (c.minSeparationFromLeftSiblingSubtree.sep > 0) {
+        //     console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep, c.minSeparationFromCousin.sep);
+        //     let supportingChild = null;
             
-            for (let j = i - 1; j >= 0; j--) {
-                let supportSearch = node.child(j);
-                if (supportSearch.maxdepth >= c.minLeftProfileSeparation.rank) {
-                    supportingChild = supportSearch;
-                    console.log("supporting sibling for is", c.label, c.id, supportingChild.label, supportingChild.id);
-                    break;
-                }
-            }
-            let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
+        //     for (let j = i - 1; j >= 0; j--) {
+        //         let supportSearch = node.child(j);
+        //         if (supportSearch.maxdepth >= c.minLeftProfileSeparation.rank) {
+        //             supportingChild = supportSearch;
+        //             console.log("supporting sibling for is", c.label, c.id, supportingChild.label, supportingChild.id);
+        //             break;
+        //         }
+        //     }
+        //     let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
 
-            if (supportingChild == null) {
-                for (let j = 0; j < c.sib_index; j++) {
-                    move_tree_deferred(node.child(j), internalSpace);
-                }
-            }
-            else {
-                // node.child(supportingChild.sib_index + 1);
-                let firstMovingSibling = node.child(supportingChild.sib_index + 1);
-                console.log("first moving sibling for is", c.label, c.id, firstMovingSibling.label, firstMovingSibling.id);
+        //     if (supportingChild == null) {
+        //         for (let j = 0; j < c.sib_index; j++) {
+        //             move_tree_deferred(node.child(j), internalSpace);
+        //         }
+        //     }
+        //     else {
+        //         // node.child(supportingChild.sib_index + 1);
+        //         let firstMovingSibling = node.child(supportingChild.sib_index + 1);
+        //         console.log("first moving sibling for is", c.label, c.id, firstMovingSibling.label, firstMovingSibling.id);
                 
-                let innerCount = c.sib_index - firstMovingSibling.sib_index;
+        //         let innerCount = c.sib_index - firstMovingSibling.sib_index;
 
-                if (innerCount > 0) {
-                    let portion = internalSpace / (innerCount + 1);
+        //         if (innerCount > 0) {
+        //             let portion = internalSpace / (innerCount + 1);
                     
-                    console.log("internal space for", internalSpace, innerCount);
+        //             console.log("internal space for", internalSpace, innerCount);
 
-                    let moveCounter = 0;
-                    for (let j = firstMovingSibling.sib_index; j < c.sib_index; j++) {
-                        let relaxingChild = node.child(j);
-                        console.log("moving right by", relaxingChild.label, internalSpace);
-                        moveCounter += portion;
-                        move_tree_deferred(relaxingChild, moveCounter);
-                        if (relaxingChild.maxdepth > c.maxdepth) {
-                            profile_patches[relaxingChild.maxdepth - c.maxdepth] = make_patch(moveCounter, relaxingChild.maxdepth);
-                        }
-                    }
-                }
-            }
-        }
+        //             let moveCounter = 0;
+        //             for (let j = firstMovingSibling.sib_index; j < c.sib_index; j++) {
+        //                 let relaxingChild = node.child(j);
+        //                 console.log("moving right by", relaxingChild.label, internalSpace);
+        //                 moveCounter += portion;
+        //                 move_tree_deferred(relaxingChild, moveCounter);
+        //                 if (relaxingChild.maxdepth > c.maxdepth) {
+        //                     profile_patches[relaxingChild.maxdepth - c.maxdepth] = make_patch(moveCounter, relaxingChild.maxdepth);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
         
         if (c.minLeftProfileSeparation.rank > claimedDepth) {
             // I think this is right. We've butted some part of our subtree up against something already laid out.
             // Since our minimum left profile separation was driven to zero above, this will
             // set our maximum separation from the external subtrees to zero... which is right.
-            minimumChildExternalSeparation = c.minLeftProfileSeparation;
+            minimumChildExternalSeparation = minsep(minimumChildExternalSeparation, c.minLeftProfileSeparation);
 
             // since it's a new contact, meaning that it's higher rank than what we've already claimed
             // if it's shallower than whatever this node's parent claims is the sibling depth
