@@ -36,18 +36,18 @@ function sleep(ms) {
 
 function debug_step() {
     draw_all_configured();
-    return sleep(100);
+    return sleep(10);
 }
 
 var finishedLayout = false;
 
 const exrp = p => (1.5**p) * (0.15 ** (1 - p));
 
-const RANK_SEPARATION = 80.0;
+const RANK_SEPARATION = 120.0;
 const BOX_W_MARGIN = 4;
 
-const W_SEPARATION = 2;
-const SUBTREE_W_SEPARATION = 4;
+const W_SEPARATION = 5;
+const SUBTREE_W_SEPARATION = 10;
 const SUBTREE_W_GEOMETRIC_FACTOR = 1;
 
 const BOX_TOP_OFFSET = 26;
@@ -1011,13 +1011,14 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
             claimedDepth = c.maxdepth;
         }
     }
-
+    
     if (MOVE_INNER_MODE) {
         // start with the last node, skip the first node.
         for (let i = node.count() - 1; i > 0; i--) {
             let c = node.child(i);
 
             let cLeftSubtreeSeparation = c.minSeparationFromLeftSiblingSubtree;
+            console.log("leftsep", node.label, c.label, cLeftSubtreeSeparation);
             
             if (cLeftSubtreeSeparation.sep > 0 && c.minLeftProfileSeparation.rank > cLeftSubtreeSeparation.rank) { // this node should let everything move right.
                 let supportingIndex = find_supporting(node, c);
@@ -1032,6 +1033,7 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
                         move_tree_deferred(node.child(supportingIndex), supportSlack);
                         await debug_step(); // DEBUG
                         node.child(supportingIndex).minSeparationFromLeftSiblingSubtree.sep += supportSlack;
+                        rightSlipDistance -= supportSlack;
                     }
                     movingIndex = supportingIndex + 1;
 
@@ -1050,8 +1052,9 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
                 }
                 else {
                     for (let j = 0; j < c.sib_index; j++) {
-                        move_tree_deferred(node.child(j), rightSlipDistance);
+                        move_tree_deferred(node.child(j), Math.min(rightSlipDistance, c.minSeparationFromCousin.sep));
                         console.log("Moving without support", node.label, node.child(j).label, rightSlipDistance);
+                        //node.child(j).minSeparationFromLeftSiblingSubtree.sep += rightSlipDistance;
                         await debug_step(); // DEBUG
                         //break; // break the outer loop
                     }
@@ -1059,7 +1062,7 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
             }
         }
     }
-
+    
     // lay out parent node above laid-out children.
 
     let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
@@ -1097,8 +1100,6 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
     node.laidOutRightMargin = rank_margins[node.rank];
 
     await debug_step(); // DEBUG
-    //if (node.label == 'KCGBY') undefined();
-
 }
 
 
