@@ -54,9 +54,8 @@ const exrp = p => (1.5**p) * (0.15 ** (1 - p));
 const RANK_SEPARATION = 120.0;
 const BOX_W_MARGIN = 4;
 
-const W_SEPARATION = 5;
-const SUBTREE_W_SEPARATION = 10;
-const SUBTREE_W_GEOMETRIC_FACTOR = 1;
+const W_SEPARATION = 2;
+const SUBTREE_W_SEPARATION = 4;
 
 const BOX_TOP_OFFSET = 26;
 const BOX_HEIGHT = BOX_TOP_OFFSET + 10;
@@ -300,53 +299,11 @@ class LiveNode {
         this.childIdeals = new Array();
 
         this.nodeNeighborSeparation = "uninitialized";
-        // this.minSeparationToLeftwardCousins = NaN;
-        // this.minSeparationToUnrelated = NaN;
-
         this.minLeftProfileSeparation = "uninitialized";
         this.minSeparationFromLeftSiblingSubtree = "uninitialized";
         this.laidOutRightMargin = "uninitialized";
-
-        this.leftEdgeByRank = new Array(); // int -> RANK ORDER
-        this.rightEdgeByRank = new Array(); // int -> RANK ORDER
-
-        this.rightProfile = new Array();
-        this.leftProfile = new Array();
     }
 
-    left_edge(rank) {
-        return rank_list(rank)[this.leftEdgeByRank[rank - this.rank]];
-    }
-
-    right_edge(rank) {
-        return rank_list(rank)[this.rightEdgeByRank[rank - this.rank]];
-    }
-
-    rank_left_edge(rank) {
-        if (rank < this.rank || rank > this.maxdepth) {return -1;}
-        return this.leftEdgeByRank[rank - this.rank];
-    }
-
-    rank_right_edge(rank) {
-        if (rank < this.rank || rank > this.maxdepth) {return -1;}
-        return this.rightEdgeByRank[rank - this.rank];
-    }
-
-    subtree_left_edge() {
-        let rval = new Array();
-        for (let i = 0; i < this.leftEdgeByRank.length; i++) {
-            rval.push(rank_list(this.rank + i)[this.leftEdgeByRank[i]]);
-        }
-        return rval;
-    }
-
-    subtree_right_edge() {
-        let rval = new Array();
-        for (let i = 0; i < this.rightEdgeByRank.length; i++) {
-            rval.push(rank_list(this.rank + i)[this.rightEdgeByRank[i]]);
-        }
-        return rval;
-    }
 
     add_child(edge_name, c) {
         let childIndex = this.children.length;
@@ -376,34 +333,6 @@ class LiveNode {
         }
     }
 
-    // collect the children's idea of subtree extrema
-    sigma(rank) {
-        let rval = {
-            'l' : -1,
-            'r' : -1
-        };
-
-        PROFILE_BUILDING++;
-
-        for (let e of this.children) {
-            let cExtreme = e.target.rank_left_edge(rank);
-            if (cExtreme >= 0) {
-                rval['l'] = cExtreme;
-                break;
-            }
-        }
-
-        for (let e of Array.from(this.children).reverse()) {
-            let cExtreme = e.target.rank_right_edge(rank);
-            if (cExtreme >= 0) {
-                rval['r'] = cExtreme;
-                break;
-            }
-        }
-
-        return rval;
-    }
-
     rank_self(my_rank, parent_ancestors) {
         // set up ancestry query set.
         parent_ancestors.forEach(item => this.ancestors.add(item));
@@ -426,133 +355,11 @@ class LiveNode {
         let rl = rank_list(my_rank);
         this.rankorder = rl.length;
         rl.push(this);
-        rank_profile_row(this.rank).push(null); // just for book keeping for now.
-
-
-        // subtree extrema
-        this.leftEdgeByRank = new Array();
-        this.rightEdgeByRank = new Array();
-        this.leftEdgeByRank.push(this.rankorder); // our own level.
-        this.rightEdgeByRank.push(this.rankorder);
-
-        this.leftProfile.push(this.x); // ultimately meaningless, and will be reassigned, but whatever.
-        this.rightProfile.push(this.x + this.boxwidth);
-
-        if (!this.leaf()) {
-            let depthCount = this.maxdepth - this.rank; // must be non-zero for non-leaf
-            for (let i = 0; i < depthCount; i++) {
-                let r = i + this.rank + 1;
-                let edges = this.sigma(r);
-                this.leftEdgeByRank.push(edges['l']);
-                this.rightEdgeByRank.push(edges['r']);
-
-                this.leftProfile.push(null);
-                this.rightProfile.push(null);
-            }
-        }
 
         // visual layout
         this.pos_y = this.rank * RANK_SEPARATION;
 
         return this.maxdepth;
-    }
-
-    claim_own_profile() {
-        rank_profile_row(this.rank)[this.rankorder] = this;
-    }
-
-    // set pointers
-    dominate_rank_profile() {
-        for (let edgeNode of this.subtree_left_edge()) {
-            rank_profile_row(edgeNode.rank)[edgeNode.rankorder] = this;
-        }
-
-        for (let edgeNode of this.subtree_right_edge()) {
-            rank_profile_row(edgeNode.rank)[edgeNode.rankorder] = this;
-        }
-    }
-
-    // actual numerical profile
-    right_profile_for_rank(rank) {
-        if (rank < this.rank || rank > this.maxdepth) return null;
-        return this.rightProfile[rank - this.rank];
-    }
-
-    right_profile_xformed(rank) {
-        let natural = this.right_profile_for_rank(rank);
-        if (natural == null) return null;
-
-        let sum = 0;// this.delta_sum();
-
-        if (this.non_tagging_delta_sum() - this.delta != 0) {
-            console.log("Nonelocal delta on right query! mine, total", this.delta, this.non_tagging_delta_sum());
-        }
-
-        return natural + sum;
-    }
-
-    // actual numerical profile
-    set_right_profile(rank, value) {
-        this.rightProfile[rank - this.rank] = value;
-    }
-
-    // actual numerical profile
-    move_right_profile(rank, delta) {
-        this.rightProfile[rank - this.rank] += delta;
-    }
-
-
-    // actual numerical profile
-    left_profile_for_rank(rank) {
-        if (rank < this.rank || rank > this.maxdepth) return null;
-        return this.leftProfile[rank - this.rank];
-    }
-
-    left_profile_xformed(rank) {
-        let natural = this.left_profile_for_rank(rank);
-        if (natural == null) return null;
-
-        let sum = 0; //this.delta_sum();
-
-        if (this.non_tagging_delta_sum() - this.delta != 0) {
-            console.log("Nonelocal delta on left query! mine, total", this.delta, this.non_tagging_delta_sum());
-        }
-
-        return natural + sum;
-    }
-
-    // actual numerical profile
-    set_left_profile(rank, value) {
-        this.leftProfile[rank - this.rank] = value;
-    }
-
-    // actual numerical profile
-    move_left_profile(rank, delta) {
-        this.leftProfile[rank - this.rank] += delta;
-    }
-
-    // actual numerical profile
-    move_whole_profile(delta) {
-        for (let i = 0; i < this.rightProfile.length; i++) {
-            PROFILE_UPDATES++;
-            this.rightProfile[i] += delta;
-        }
-
-        for (let i = 0; i < this.leftProfile.length; i++) {
-            this.leftProfile[i] += delta;
-        }
-    }
-
-    highlight_edges(v1, v2) {
-        if (!v2) v2 = v1;
-
-        for (let n of this.subtree_left_edge()) {
-            n.highlight = v1;
-        }
-
-        for (let n of this.subtree_right_edge()) {
-            n.highlight = v2;
-        }
     }
 
     resolve_delta(parent_value) {
@@ -623,23 +430,6 @@ class LiveNode {
 
     click_inside(x, y) {
         return this.x_inside(x) && this.y_inside(y);
-    }
-
-    layout_left_side() {
-        LEFT_SIDE_COUNTER++;
-        this.tag2 = true;
-        return this.x + this.delta_sum();
-    }
-
-    layout_right_side() {
-        RIGHT_SIDE_COUNTER++;
-        this.tag = true;
-        return this.x + this.delta_sum() + this.boxwidth;
-        //return this.layout_left_side() + this.boxwidth; // separated for tagging
-    }
-
-    layout_center() {
-        return this.layout_left_side() + this.halfw();
     }
 
     layout_natural_right() {
@@ -791,55 +581,10 @@ class LiveNode {
         if (!finishedLayout) {
             this.highlight = false;
         }
-
-        if (this.tag_profile) {
-            draw_node_profile(ctx, this);
-            this.tag_profile--;
-        }
     }
 }
 
 
-async function n1_lda_skew_tree(node, parent_skew) {
-    if (node.leaf()) {
-        await debug_step(); // DEBUG
-        node.x += parent_skew;
-        return;
-    }
-
-    let naturalPosition = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
-    naturalPosition -= node.halfw();
-
-    console.log(node.label, naturalPosition, node.x);
-
-    let skew = node.x - naturalPosition;
-    node.x += parent_skew;
-
-    await debug_step(); // DEBUG
-    for (let e of Array.from(node.children).reverse()) {
-        await _lda_skew_tree(e.target, parent_skew + skew);
-    }
-}
-
-async function _lda_skew_tree(node, parent_skew) {
-    let skew = 0;
-    if (node.leaf()) {
-        await debug_step(); // DEBUG
-        node.x += parent_skew;
-        return;
-    }
-
-
-    let naturalPosition = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
-    naturalPosition -= node.halfw();
-
-    node.x = naturalPosition;
-
-    await debug_step(); // DEBUG
-    for (let e of node.children) {
-        await _lda_skew_tree(e.target, parent_skew + skew);
-    }    
-}
 
 //  ***************************************************************
 
@@ -1003,7 +748,7 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
         if (c.minLeftProfileSeparation.rank > claimedDepth) {
             minimumSubtreeSeparation = minsep(minimumSubtreeSeparation, c.minLeftProfileSeparation);
 
-            if (c.minLeftProfileSeparation.rank >= parent_left_depth) {
+            if (c.minLeftProfileSeparation.rank <= parent_left_depth) {
                 subtreeCousinSeparation = minsep(subtreeCousinSeparation, c.minLeftProfileSeparation);
             }
 
@@ -1023,13 +768,12 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
             let c = node.child(i);
 
             let cLeftSubtreeSeparation = c.minSeparationFromLeftSiblingSubtree;
-            console.log("leftsep", node.label, c.label, cLeftSubtreeSeparation);
             
             if (cLeftSubtreeSeparation.sep > 0 && c.minLeftProfileSeparation.rank > cLeftSubtreeSeparation.rank) { // this node should let everything move right.
                 let supportingIndex = find_supporting(node, c);
 
                 let movingIndex = undefined;
-                let rightSlipDistance = c.minSeparationFromLeftSiblingSubtree.sep;
+                let rightSlipDistance = cLeftSubtreeSeparation.sep;
 
                 if (supportingIndex >= 0) { // we have an internal support subtree
                     let supportSlack = c.minSeparationFromCousin.sep;
@@ -1038,6 +782,7 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
                         move_tree_deferred(node.child(supportingIndex), supportSlack);
                         await debug_step(); // DEBUG
                         node.child(supportingIndex).minSeparationFromLeftSiblingSubtree.sep += supportSlack;
+                        node.child(supportingIndex).minSeparationFromCousin.sep += supportSlack;
                         rightSlipDistance -= supportSlack;
                     }
                     movingIndex = supportingIndex + 1;
@@ -1050,18 +795,21 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
                         console.log("Moving right with support", node.label, c.label, c.id, moveCounter, node.child(j).label);
                         move_tree_deferred(node.child(j), moveCounter);
                         node.child(j).minSeparationFromLeftSiblingSubtree.sep += moveCounter;
+                        node.child(j).minSeparationFromCousin.sep += moveCounter;
                         moveCounter += portion;
                         await debug_step(); // DEBUG
                     }
-                    i = supportingIndex + 1; // update the outer loop to skip here for the beginning of the next search.
+                    i = supportingIndex; // update the outer loop to skip here for the beginning of the next search.
                 }
                 else {
-                    for (let j = 0; j < c.sib_index; j++) {
-                        move_tree_deferred(node.child(j), Math.min(rightSlipDistance, c.minSeparationFromCousin.sep));
-                        console.log("Moving without support", node.label, node.child(j).label, rightSlipDistance);
-                        //node.child(j).minSeparationFromLeftSiblingSubtree.sep += rightSlipDistance;
-                        await debug_step(); // DEBUG
-                        //break; // break the outer loop
+                    let unsupportedSlip = Math.min(rightSlipDistance, c.minSeparationFromCousin.sep);
+                    if (unsupportedSlip > 0) {
+                        for (let j = 0; j < c.sib_index; j++) {
+                            move_tree_deferred(node.child(j), unsupportedSlip);
+                            console.log("Moving without support", node.label, node.child(j).label, unsupportedSlip);
+                            await debug_step(); // DEBUG
+                        }
+                        subtreeSubtreeSeparation = ranksep(node.child(0).minSeparationFromLeftSiblingSubtree.rank, unsupportedSlip);
                     }
                 }
             }
@@ -1108,385 +856,6 @@ async function _lda_layout3(node, rank_margins, profile_patches, parent_left_dep
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-async function _lda_layout2(node, rank_margins, profile_patches, parent_left_depth, left_neighbor_subtree_depth) {
-    node.left_parent_depth_at_layout = parent_left_depth; // DEBUG
-
-    // patch the profile first. This only resolves any deferred move in this rank,
-    // potentially passing it on to the next rank. We can't have more than one 
-    // patch for a given rank, because whatever tree generated the last patch
-    // must have resolved the prior one as it was laying out.
-    if (profile_patches[node.rank] != null) {
-        let patch = profile_patches[node.rank];
-        rank_margins[node.rank] += patch.delta;
-        if (patch.stop != node.rank) {
-            profile_patches[node.rank + 1] = patch;
-        }
-        profile_patches[node.rank] = null;
-    }
-
-    // Measure and adjust the left margins, getting the offset from where they originally were.
-    let marginSeparation;
-    if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
-        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin    
-
-        if (rank_margins[node.rank] == null) { // virgin rank
-            rank_margins[node.rank] = nextStart; // just set the ideal as the margin
-
-            marginSeparation = 1000000; //there's no left margin, we could move leftward infinitely.
-        }
-        else { // there's something to the left
-            let startMargin = rank_margins[node.rank];
-            rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart); // either the ideal spot, or as far leftward as allowed by current rank margin.
-            marginSeparation = rank_margins[node.rank] - startMargin; // we could move leftward to butt up against our leftward neighbor.
-        }
-    }
-    else if(node.rank > 0 && node.sib_index > 0) {
-        // if we're a sibling and a leaf, we're going to be laid out absolutely and correctly the first time based on the default margin.
-        // we cannot move leftward toward our immediate sibling
-        // if we're not a leaf, we'll deal with it later on.
-        marginSeparation = 0;
-    }
-
-    if (node.leaf()) {
-        node.nodeNeighborSeparation = ranksep(node.rank, marginSeparation);
-        node.minLeftProfileSeparation = ranksep(node.rank, marginSeparation);
-
-        if (node.rank <= left_neighbor_subtree_depth) {
-            node.minSeparationFromLeftSiblingSubtree = ranksep(node.rank, marginSeparation);
-        }
-        else {
-            node.minSeparationFromLeftSiblingSubtree = ranksep(node.rank, 123123123123);
-        }
-
-        if (node.rank <= parent_left_depth) {
-            node.minSeparationFromCousin = ranksep(node.rank, marginSeparation);
-        }
-        else {
-            node.minSeparationFromCousin = ranksep(node.rank, 858585858585);
-        }
-
-        // set the node's position and advance the margin by the node's width
-        node.x = rank_margins[node.rank];
-        rank_margins[node.rank] += node.boxwidth;
-        // add inter-node spacing.
-        if (node.parent && node.sib_index == node.parent.count() - 1) {
-            rank_margins[node.rank] += SUBTREE_W_SEPARATION;
-        }
-        else {
-            rank_margins[node.rank] += W_SEPARATION;
-        }
-        node.laidOutRightMargin = rank_margins[node.rank];
-        await debug_step(); // DEBUG
-        return;
-    }
-
-    // we're going to first lay out the left child, as it will always be up against some
-    // correct part of the tree, and cannot slip leftward relative to this node.
-    //let claimedDepth = node.rank;
-    await _lda_layout2(node.child(0), rank_margins, profile_patches, node.rank, left_neighbor_subtree_depth);
-    let claimedDepth = node.child(0).maxdepth;
-
-    // this cannot simply be 0, as it's possible the external separation on the child
-    // is "infinite".
-    let minimumChildExternalSeparation = node.child(0).minLeftProfileSeparation;
-    let minimumThisNodeNeighborTreeSeparation = node.child(0).minSeparationFromLeftSiblingSubtree;
-    let minimumThisNodeCousinSeparation = node.child(0).minSeparationFromCousin;
-
-    // strict postorder assured by laying out children before touching any of our own node's layout.
-    for (let i = 1; i < node.count(); i++) {
-        let c = node.child(i);
-        await _lda_layout2(c, rank_margins, profile_patches, claimedDepth, node.child(i - 1).maxdepth);
-
-        let slipDistance = c.minLeftProfileSeparation.sep;
-        if (slipDistance > 0) {
-            console.log("contraction", c.label, c.id, slipDistance);
-            move_tree_deferred(c, -slipDistance);
-            await debug_step(); // DEBUG
-            profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
-            c.minLeftProfileSeparation.sep -= slipDistance; // note that we've driven it to zero.
-            c.minSeparationFromLeftSiblingSubtree.sep -= slipDistance;
-            c.minSeparationFromCousin.sep -= slipDistance;
-        }
-
-        if (c.label == 'VODXSE') undefined();
-
-        // // do we need to relax leftward nodes?
-        // if (c.minSeparationFromLeftSiblingSubtree.sep > 0) {
-        //     console.log("left subtree separation", c.label, c.id, c.minSeparationFromLeftSiblingSubtree.sep, c.minSeparationFromCousin.sep);
-        //     let supportingChild = null;
-            
-        //     for (let j = i - 1; j >= 0; j--) {
-        //         let supportSearch = node.child(j);
-        //         if (supportSearch.maxdepth >= c.minLeftProfileSeparation.rank) {
-        //             supportingChild = supportSearch;
-        //             console.log("supporting sibling for is", c.label, c.id, supportingChild.label, supportingChild.id);
-        //             break;
-        //         }
-        //     }
-        //     let internalSpace = c.minSeparationFromLeftSiblingSubtree.sep;
-
-        //     if (supportingChild == null) {
-        //         for (let j = 0; j < c.sib_index; j++) {
-        //             move_tree_deferred(node.child(j), internalSpace);
-        //         }
-        //     }
-        //     else {
-        //         // node.child(supportingChild.sib_index + 1);
-        //         let firstMovingSibling = node.child(supportingChild.sib_index + 1);
-        //         console.log("first moving sibling for is", c.label, c.id, firstMovingSibling.label, firstMovingSibling.id);
-                
-        //         let innerCount = c.sib_index - firstMovingSibling.sib_index;
-
-        //         if (innerCount > 0) {
-        //             let portion = internalSpace / (innerCount + 1);
-                    
-        //             console.log("internal space for", internalSpace, innerCount);
-
-        //             let moveCounter = 0;
-        //             for (let j = firstMovingSibling.sib_index; j < c.sib_index; j++) {
-        //                 let relaxingChild = node.child(j);
-        //                 console.log("moving right by", relaxingChild.label, internalSpace);
-        //                 moveCounter += portion;
-        //                 move_tree_deferred(relaxingChild, moveCounter);
-        //                 if (relaxingChild.maxdepth > c.maxdepth) {
-        //                     profile_patches[relaxingChild.maxdepth - c.maxdepth] = make_patch(moveCounter, relaxingChild.maxdepth);
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        
-        if (c.minLeftProfileSeparation.rank > claimedDepth) {
-            // I think this is right. We've butted some part of our subtree up against something already laid out.
-            // Since our minimum left profile separation was driven to zero above, this will
-            // set our maximum separation from the external subtrees to zero... which is right.
-            minimumChildExternalSeparation = minsep(minimumChildExternalSeparation, c.minLeftProfileSeparation);
-
-            // since it's a new contact, meaning that it's higher rank than what we've already claimed
-            // if it's shallower than whatever this node's parent claims is the sibling depth
-            // go ahead and take it.
-            if (c.minLeftProfileSeparation.rank <= left_neighbor_subtree_depth) {
-                minimumThisNodeNeighborTreeSeparation = c.minLeftProfileSeparation;
-            }
-        }
-        else {
-            minimumThisNodeCousinSeparation = c.minSeparationFromCousin;
-        }
-        
-        if (c.maxdepth > claimedDepth) {
-            claimedDepth = c.maxdepth;
-        }
-    }
-
-    let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
-    midpoint -= node.halfw();
-
-    node.x = midpoint; // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
-    let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
-
-    node.nodeNeighborSeparation = ranksep(node.rank, centeringSeparation + marginSeparation);
-    node.minLeftProfileSeparation = minsep(node.nodeNeighborSeparation, minimumChildExternalSeparation);
-
-    if (node.rank <= left_neighbor_subtree_depth) {
-        node.minSeparationFromLeftSiblingSubtree = minsep(minimumThisNodeNeighborTreeSeparation, node.nodeNeighborSeparation);
-    }
-
-    if (node.rank <= parent_left_depth) {
-        node.minSeparationFromCousin = node.nodeNeighborSeparation; //minsep(minimumThisNodeCousinSeparation, node.nodeNeighborSeparation);
-    }
-
-    rank_margins[node.rank] = node.x + node.boxwidth;
-    if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
-        rank_margins[node.rank] += SUBTREE_W_SEPARATION;
-    }
-    else {
-        rank_margins[node.rank] += W_SEPARATION;
-    }
-    node.laidOutRightMargin = rank_margins[node.rank];
-
-    await debug_step(); // DEBUG
-}
-
-
-
-
-
-async function _lda_layout(node, rank_margins, profile_patches, parent_left_depth, left_sibling_depth) {
-    //node.rightProfile = Array.from(rank_margins); // DEBUG
-
-    node.left_parent_depth_at_layout = parent_left_depth;
-    node.left_sib_debug_depth = left_sibling_depth;  
-
-    if (profile_patches[node.rank] != null) {
-        let patch = profile_patches[node.rank];
-        rank_margins[node.rank] += patch.delta;
-        if (patch.stop != node.rank) {
-            profile_patches[node.rank + 1] = patch;
-        }
-        profile_patches[node.rank] = null;
-    }
-
-    // these cases set up the margins, and measure separations from previous nodes and subtrees for leaves. Inner nodes will overwrite these measurements.
-    // this is all mixed together basically because the margin updates and the separation measurements are easiest done right next to each other
-
-    let marginSeparation;
-    if (node.rank > 0 && node.sib_index == 0) { // start of a new subtree
-        let nextStart = rank_margins[node.rank - 1] + node.parent.childIdeals[0]; // get the "best" place to put the next node based on its parents' left margin    
-
-        if (rank_margins[node.rank] == null) { // virgin rank
-            rank_margins[node.rank] = nextStart; // just set the ideal as the margin
-
-            marginSeparation = 1000000; //there's no left margin, we could move leftward infinitely.
-        }
-        else { // there's something to the left
-            let startMargin = rank_margins[node.rank];
-            rank_margins[node.rank] = Math.max(rank_margins[node.rank], nextStart); // either the ideal spot, or as far leftward as allowed by current rank margin.
-            marginSeparation = rank_margins[node.rank] - startMargin; // we could move leftward to butt up against our leftward neighbor.
-        }
-    }
-    else if(node.rank > 0 && node.sib_index > 0) {
-        // if we're a sibling and a leaf, we're going to be laid out absolutely and correctly the first time
-        // we cannot move leftward toward our immediate sibling
-        // if we're not a leaf, we'll deal with it later on.
-        marginSeparation = 0;
-    }
-
-    // how far between us and the leftward profile at layout?
-    node.nodeNeighborSeparation = marginSeparation;
-    
-    if (node.leaf()) {
-        // how much separation does this node have beteen itself and any node that isn't a leftward descendant of its parent?
-        // this exclusion principle is only between leftward siblings, 
-        // these cases are only true for leaves
-        if (node.maxdepth <= parent_left_depth) {
-            node.minSeparationToUnrelated = null;
-            node.minSeparationToLeftwardCousins = ranksep(node.rank, marginSeparation);
-        }
-        else {
-            node.minSeparationToUnrelated = ranksep(node.rank, marginSeparation);
-            node.minSeparationToLeftwardCousins = null;
-        }
-    
-        node.x = rank_margins[node.rank];
-        rank_margins[node.rank] += node.boxwidth;
-        if (node.parent && node.sib_index == node.parent.count() - 1) {
-            rank_margins[node.rank] += SUBTREE_W_SEPARATION;
-        }
-        else {
-            rank_margins[node.rank] += W_SEPARATION;
-        }
-        await debug_step(); // DEBUG
-        return;
-    }
-
-    // our left child has the first chance to set minimums.
-    // We run it with the parent left depth, because by definition this node defines
-    // our first stab into the left profile, and we ourselves have claimed no
-    // ranks
-    await _lda_layout(node.child(0), rank_margins, profile_patches, parent_left_depth, left_sibling_depth);
-    let unrelatedSep = node.child(0).minSeparationToUnrelated;   
-
-    let claimedDepth = node.child(0).maxdepth;
-
-    for (let i = 1; i < node.count(); i++) {
-        let c = node.child(i);
-        await _lda_layout(c, rank_margins, profile_patches, claimedDepth, node.child(i - 1).maxdepth);
-        
-        if (c.minSeparationToUnrelated != null) {
-            let slipDistance = c.minSeparationToUnrelated.sep;
-
-            if (slipDistance > 0) {
-                console.log("contraction");
-                move_tree_deferred(c, -slipDistance);
-                await debug_step(); // DEBUG
-                profile_patches[c.rank] = make_patch(-slipDistance, c.maxdepth);
-                c.minSeparationToUnrelated.sep -= slipDistance;
-            }
-
-            if (unrelatedSep == null) {
-                unrelatedSep = c.minSeparationToUnrelated;
-            }
-        }
-
-        if (c.maxdepth > claimedDepth) claimedDepth = c.maxdepth;
-    }
-
-    let midpoint = (node.child(0).x + node.child(-1).layout_natural_right()) / 2.0;
-    midpoint -= node.halfw();
-
-    node.x = midpoint; // the Math.max here is to deal with a JavaScript rounding error that propagates into a logic error.
-    let centeringSeparation = node.x - rank_margins[node.rank]; // x must 0 or rightward of its starting location, as all children are strung out rightward.
-    rank_margins[node.rank] = node.x + node.boxwidth;
-
-    if (node.parent && node.sib_index == node.parent.count() - 1) { // add subtree separations
-        rank_margins[node.rank] += SUBTREE_W_SEPARATION;
-    }
-    else {
-        rank_margins[node.rank] += W_SEPARATION;
-    }
-
-    node.nodeNeighborSeparation = Math.max(marginSeparation, centeringSeparation); // either the natural place, or the centered place, whichever is bigger (including infinity).
-
-    let ranksepdist;
-
-    if (unrelatedSep != null) {
-        // we had a leftward neighbor of higher rank than our parents' processed subchildren, so find the minimum amount we could move
-        //console.log("not null at end", node.label, node.id, unrelatedSep);
-        ranksepdist = minsep(ranksep(node.rank, node.nodeNeighborSeparation), unrelatedSep);
-    }
-    else {
-        // we never had any leftward neighborship with our parents' external nodes.
-        // so we actually can't move anywhere.
-        //console.log("null at end", node.label, node.id);
-        ranksepdist = ranksep(node.rank, 0);
-    }
-
-
-    await debug_step(); // DEBUG
-}
 
 async function layout_tree(root) {
     let before = Date.now();
@@ -1574,434 +943,6 @@ function NOT_draw_node_profile(ctx, n) {
         // ctx.moveTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET);
         // ctx.lineTo(leftProfileX, rank * RANK_SEPARATION - BOX_TOP_OFFSET + BOX_HEIGHT);
         // ctx.stroke();
-    }
-}
-
-function find_common(a, b) {
-    if (a === b) return b;
-    if (a.parent === b.parent) return a.parent; // could be null if we passed in some root nodes, I guess?
-
-    let ap = a.parent, bp = b.parent;
-
-    while (ap.rank > bp.rank) {
-        ap = ap.parent;
-        if (ap.parent === bp) return bp;
-    }
-
-    while (bp.rank > ap.rank) {
-        bp = bp.parent;
-        if (bp.parent === ap) return ap;
-    }
-
-    while (ap != bp) {
-        ap = ap.parent;
-        bp = bp.parent;
-    }
-
-    return ap;
-}
-
-var least = function(a, b) {
-    if (a < b) return a;
-    return b;
-}
-
-var greatest = function(a, b) {
-    if (a > b) return a;
-    return b;
-}
-
-function copy_subtree_profile(v) {
-    PROFILE_UPDATES++;
-    let leftChild = v.child(0);
-    v.set_left_profile(v.rank + 1, leftChild.left_profile_for_rank(v.rank + 1) + leftChild.delta);
-
-    let rightChild = v.child(-1);
-    v.set_right_profile(v.rank + 1, rightChild.right_profile_for_rank(v.rank + 1) + rightChild.delta);
-
-    for (let i = v.rank + 2; i <= v.maxdepth; i++) { // not my rank, and not my children's rank either
-        PROFILE_UPDATES++;
-        for (let e of Array.from(v.children).reverse()) {
-            let c = e.target;
-            let childProfile = c.right_profile_for_rank(i);
-            if (childProfile == null) continue;
-            v.set_right_profile(i, childProfile + c.delta);
-            break;
-        }
-
-        for (let e of v.children) {
-            let c = e.target;
-            let childProfile = c.left_profile_for_rank(i);
-            if (childProfile == null) continue;
-            v.set_left_profile(i, childProfile + c.delta);
-            break;
-        }
-    }
-}
-
-function _layout(v, distance) {
-    LAYOUT_RECURSION_COUNTER++;
-    v.placedStep = LAYOUT_RECURSION_COUNTER;
-
-    let separationDistance = W_SEPARATION;
-    if (v.sib_index == 0) {
-        console.log("Placing with tree separation.", v.label, v.id);
-        separationDistance = SUBTREE_W_SEPARATION;
-    }
-
-    if (v.rankorder > 0) {
-        if (PROFILE_COLLISION_MODE) {
-            v.x = rank_profile_left(v).right_profile_xformed(v.rank) + separationDistance;
-        }
-        else {
-            v.x = rank_left(v).layout_right_side() + separationDistance;
-        }
-        let common = find_common(v, rank_left(v));
-        common.tag_common++;
-        common.last_common = LAYOUT_RECURSION_COUNTER;
-    }
-    else {
-        v.x = 0.0;
-    }
-
-    v.set_left_profile(v.rank, v.x);
-    v.set_right_profile(v.rank, v.x + v.boxwidth);
-    v.claim_own_profile();
-
-    //await debug_step(); // DEBUG
-    
-    if (v.leaf()) {
-        mark_wave(v);
-        return;
-    }
-
-    // inner node
-    let cCount = v.count();
-    for (let i = 0; i < cCount; i++) {
-        let c = v.child(i);
-        //await _layout(c, distance); // DEBUG
-        _layout(c, distance);
-    }
-
-    // stack between and above leaves
-    let midpoint = (v.child(0).x + v.child(-1).layout_natural_right()) / 2.0;
-    let natural = midpoint - v.halfw();
-    v.x = natural; // set the natural midpoint, but we'll still adjust farther along
-    
-    v.set_left_profile(v.rank, v.x);
-    v.set_right_profile(v.rank, v.x + v.boxwidth);
-    
-    let lefthandMargin = 0;
-    let lefthand = PROFILE_COLLISION_MODE ? rank_profile_left(v) : rank_left(v);
-    
-    if (lefthand) {
-        if (PROFILE_COLLISION_MODE) {
-            lefthandMargin = lefthand.right_profile_xformed(v.rank) + separationDistance;
-        }
-        else {
-            lefthandMargin = lefthand.layout_right_side() + separationDistance;
-        }
-    }
-
-    let wantedMove = lefthandMargin - natural;
-
-    copy_subtree_profile(v);
-
-    do_constrained_move(v, wantedMove, false);
-
-    if (MOVE_INNER_MODE) {
-        for (let e of v.children.slice(0).reverse()) {
-            let c = e.target;
-            //let stress = v.layout_left_side() + v.childIdeals[c.sib_index] - c.layout_left_side();
-            let stress = v.x - v.delta + v.childIdeals[c.sib_index] - c.x - c.delta;
-            if (stress > 0) {
-                do_constrained_move(c, stress, true);
-            }
-        }
-        // I think this is maybe unnecessary... the right-hand profile can't move, and the left-hand profile
-        // is never needed again. No... maybe it is... if we're the right-hand subchild of a new getting
-        // laid out.
-        copy_subtree_profile(v);
-    }
-   
-
-    v.dominate_rank_profile();
-    //v.tag_common = 0; // reset the counter now that we're "in place".
-
-    mark_wave(v);
-    //await debug_step(); // DEBUG
-    return v;
-}
-
-function constrain_by_left_profile(v, wantedMove) {
-    PROFILE_QUERIES++;
-
-    console.log("constraining left, moving", v.label, v.id);
-
-    let commons = new Set(); // profiling only.
-
-    let leftEdge = v.subtree_left_edge();
-
-    for (let i = 0; i < leftEdge.length; i++) {
-        PROFILE_QUERIES_SUB++;
-        let leftProfileRoot = rank_profile_left(leftEdge[i]);
-        if (!leftProfileRoot) {
-            //console.log("no left root.");
-            continue;
-        }
-
-        leftProfileRoot.tag = 5;
-        let common = find_common(v, rank_left(v));
-        if (!commons.has(common)) {
-            common.tag_common++;
-            common.last_common = LAYOUT_RECURSION_COUNTER;
-            commons.add(common);
-        }
-
-        console.log("left, right", leftProfileRoot.right_edge(v.rank + i).label, v.left_edge(v.rank + i).label);
-
-        let leftmargin = leftProfileRoot.right_profile_xformed(v.rank + i);
-        if (leftProfileRoot.right_edge(v.rank + i).parent == leftEdge[i].parent) { 
-            leftmargin += W_SEPARATION;
-        }
-        else {
-            console.log("subtree separation left");
-            leftmargin += SUBTREE_W_SEPARATION;
-        }
-        //leftmargin += W_SEPARATION;
-
-        let targetX = v.left_profile_for_rank(v.rank + i) + wantedMove;
-
-        let overlap = targetX - leftmargin;
-            
-        if (overlap < 0) {
-            wantedMove -= overlap;
-        }
-    }
-
-    return wantedMove;
-}
-
-function constrain_by_right_profile(v, wantedMove) {
-    PROFILE_QUERIES++;
-
-    let commons = new Set(); // profiling only.
-
-    let rightEdge = v.subtree_right_edge();
-
-    for (let i = 0; i < rightEdge.length; i++) {
-        PROFILE_QUERIES_SUB++;
-        let rightProfileRoot = rank_profile_right(rightEdge[i]);
-        if (!rightProfileRoot) {
-            //console.log("no right root.");
-            continue;
-        }
-
-        rightProfileRoot.tag = 5;
-        let common = find_common(v, rank_right(v));
-        if (!commons.has(common)) {
-            common.tag_common++;
-            common.last_common = LAYOUT_RECURSION_COUNTER;
-            commons.add(common);
-        }
-
-        let rightMargin = rightProfileRoot.left_profile_xformed(v.rank + i);
-
-        if (rightProfileRoot.left_edge(v.rank + i).parent == rightEdge[i].parent) { 
-            rightMargin -= W_SEPARATION;
-        }
-        else {
-            console.log("subtree separation right");
-            rightMargin -= SUBTREE_W_SEPARATION;
-        }
-
-        let targetRightEdge = v.right_profile_xformed(v.rank + i) + wantedMove;
-
-        let overlap = targetRightEdge - rightMargin;
-
-        if (overlap > 0) {
-            wantedMove -= overlap;
-        }
-    }
-
-    return wantedMove;
-}
-
-function do_constrained_move(v, wantedMove, doRightCheck = true) {
-    const nodeLocalEdgeLists = true;
-
-    v.tag3 = 5;
-    
-
-    if (wantedMove == 0) { 
-        return 0; 
-    }
-    else if (wantedMove < 0) { // we're moving left
-        if (PROFILE_COLLISION_MODE) {
-            wantedMove = constrain_by_left_profile(v, wantedMove);
-        }
-        else {
-            let leftEdge;
-            if (nodeLocalEdgeLists) {
-                leftEdge = v.subtree_left_edge();
-            } 
-            else { 
-                leftEdge = wavefront_subtree_left_edge(v) 
-            };
-            wantedMove = constrain_by_left_edge(leftEdge, wantedMove);
-        }
-    }
-    else if (doRightCheck && wantedMove > 0) {
-        if (PROFILE_COLLISION_MODE) {
-            wantedMove = constrain_by_right_profile(v, wantedMove);
-        }
-        else {
-            let rightEdge;
-            if (nodeLocalEdgeLists) {
-                rightEdge = v.subtree_right_edge();
-            }
-            else {
-                rightEdge = wavefront_subtree_right_edge(v);;
-            }
-            wantedMove = constrain_by_right_edge(rightEdge, wantedMove);
-        }
-    }
-
-    const deferred = DEFERRED_MOVE_MODE;
-    if (deferred) {
-        move_tree_deferred(v, wantedMove);
-    }
-    else {
-        move_tree(v, wantedMove);
-    }
-
-    v.move_whole_profile(wantedMove);
-
-    return wantedMove; // return the amount actually moved.
-}
-
-function search_rank_left_for_descendant(root, rank) {
-    root.tag3 = true;
-    let waveFront = wave_front(rank);
-    if (!waveFront) return null;
-    if (waveFront.descends_from(root)) return waveFront;
-
-    while (waveFront = rank_left(waveFront)) {
-        if (waveFront.descends_from(root)) return waveFront;
-    }
-
-    return null;
-}
-
-function search_rank_for_left_edge(root, startNode) {
-    root.tag3 = true;
-    let nextLeft = rank_left(startNode);
-    
-    while (nextLeft && nextLeft.descends_from(root)) {
-        nextLeft.tag3 = true;
-        startNode = nextLeft;
-        nextLeft = rank_left(startNode);
-    }
-
-    return startNode;
-}
-
-function wavefront_subtree_left_edge(root) {
-    root.tag3 = true;
-    let edge = new Array();
-    for (let i = root.rank; i <= root.maxdepth; i++) {
-        let edgeNode = search_rank_left_for_descendant(root, i);
-        if (!edgeNode) continue;
-        edge.push(search_rank_for_left_edge(root, edgeNode));
-        
-    }
-    return edge;
-}
-
-var wavefront_subtree_right_edge = function(root) {
-    root.tag3 = true;
-    let edge = new Array();
-    for (let i = root.rank; i <= root.maxdepth; i++) {
-        let edgeNode = search_rank_left_for_descendant(root, i);
-        if (!edgeNode) continue;
-        edge.push(edgeNode);
-    }
-    return edge;
-}
-
-function constrain_by_left_edge(edge_list, amount) {
-    PROFILE_QUERIES++;
-    let commons = new Set();
-
-    for (let v of edge_list) {
-        PROFILE_QUERIES_SUB++;
-
-        if (v.rankorder == 0) {
-            continue;
-        }
-
-        let common = find_common(v, rank_left(v));
-        if (!commons.has(common)) {
-            common.tag_common++;
-            common.last_common = LAYOUT_RECURSION_COUNTER;
-            commons.add(common);
-        }
-
-        let leftmargin = rank_left(v).layout_right_side() + W_SEPARATION;
-        let targetX = v.layout_left_side() + amount;
-        
-        let overlap = targetX - leftmargin;
-    
-        
-        if (overlap < 0) {
-            amount -= overlap;
-        }
-    }
-
-    //commons.forEach( n => n.highlight_edges("red"));
-
-    return amount;
-}
-
-function constrain_by_right_edge(edge_list, amount) {
-    PROFILE_QUERIES++;
-    let commons = new Set();
-
-    for (let v of edge_list) {
-        PROFILE_QUERIES_SUB++;
-        let rightNeighbor = rank_right(v);
-        if (!rightNeighbor) continue;
-
-        let common = find_common(v, rightNeighbor);
-        if (!commons.has(common)) {
-            common.tag_common++;
-            common.last_common = LAYOUT_RECURSION_COUNTER;
-            commons.add(common);
-        }
-
-        let rightMargin = rightNeighbor.layout_left_side() - W_SEPARATION;
-        let targetRightEdge = v.layout_right_side() + amount;
-
-        let overlap = targetRightEdge - rightMargin;
-
-        if (overlap > 0) {
-            amount -= overlap;
-        }
-    }
-    return amount;
-}
-
-
-
-
-var move_tree = function(v, amount) {
-    MOVE_COUNTER++;
-    v.tag4 = true;
-    v.lastMoveStep = LAYOUT_RECURSION_COUNTER;
-
-    v.x += amount;
-    for (let edge of v.children) {
-        move_tree(edge.target, amount);
     }
 }
 
@@ -2157,6 +1098,7 @@ var set_node_data = function(n) {
         "min left profile sep" : n.minLeftProfileSeparation,
         "min left subtree sep" : n.minSeparationFromLeftSiblingSubtree,
         "min left cousin sep" : n.minSeparationFromCousin,
+        "min inner subtree sep": n.minSubtreeSeparation,
         "parent wave" : n.left_parent_depth_at_layout,
         "left tree depth" : n.left_tree_depth
     };
@@ -2233,10 +1175,6 @@ var draw_all = function(canvas) {
         ctx.scale(g_scale, g_scale);
         ctx.translate(-g_pan_x, -g_pan_y);
         iter_all(n => n.draw(ctx));
-
-        if (_displayed_node) {
-            draw_node_profile(ctx, _displayed_node);
-        }
         ctx.restore();
     }
 }
